@@ -4,31 +4,199 @@
   <meta charset="utf-8">
   <title>{% block title %}防災アプリ{% endblock %}</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    :root {
+      color-scheme: light;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans JP", sans-serif;
+      color: #26364a;
+      background: #f7f9fc;
+      font-synthesis: none;
+      text-rendering: optimizeLegibility;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      min-width: 320px;
+      margin: 0;
+      background: #f7f9fc;
+    }
+
+    .site-header {
+      position: relative;
+      z-index: 1000;
+      min-height: 70px;
+      color: #fff;
+      background: linear-gradient(110deg, #2855a1, #2d5da9);
+      box-shadow: 0 2px 8px rgb(24 54 100 / 18%);
+    }
+
+    .header-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: min(100% - 48px, 1380px);
+      min-height: 70px;
+      margin: 0 auto;
+    }
+
+    .site-title {
+      margin: 0;
+      color: #fff;
+      font-size: 24px;
+      font-weight: 750;
+      letter-spacing: .04em;
+    }
+
+    .menu-toggle {
+      display: grid;
+      width: 44px;
+      height: 44px;
+      place-items: center;
+      padding: 0;
+      border: 0;
+      border-radius: 9px;
+      color: #fff;
+      background: transparent;
+      cursor: pointer;
+    }
+
+    .menu-toggle:hover,
+    .menu-toggle:focus-visible {
+      background: rgb(255 255 255 / 14%);
+    }
+
+    .menu-toggle svg {
+      width: 25px;
+      height: 25px;
+    }
+
+    .site-nav {
+      position: absolute;
+      top: calc(100% - 1px);
+      right: max(24px, calc((100% - 1380px) / 2));
+      display: none;
+      min-width: 240px;
+      padding: 8px;
+      border: 1px solid #e4eaf2;
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: 0 12px 30px rgb(29 52 82 / 16%);
+    }
+
+    .site-nav.is-open {
+      display: grid;
+    }
+
+    .site-nav a {
+      padding: 12px 14px;
+      border-radius: 8px;
+      color: #294b7b;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .site-nav a:hover,
+    .site-nav a:focus-visible {
+      background: #eff5ff;
+    }
+
+    .nav-account {
+      margin: 4px 8px 2px;
+      padding: 10px 6px 4px;
+      border-top: 1px solid #e8edf4;
+      color: #65748a;
+      font-size: 13px;
+    }
+
+    main {
+      width: min(100% - 40px, 910px);
+      margin: 32px auto 64px;
+    }
+
+    @media (max-width: 600px) {
+      .header-inner {
+        width: calc(100% - 32px);
+        min-height: 62px;
+      }
+
+      .site-header {
+        min-height: 62px;
+      }
+
+      .site-title {
+        font-size: 21px;
+      }
+
+      .site-nav {
+        right: 16px;
+      }
+
+      main {
+        width: calc(100% - 28px);
+        margin-top: 20px;
+      }
+    }
+  </style>
+  {% block head_extra %}{% endblock %}
 </head>
 <body>
-  <!-- ヘッダー -->
-  <h1>防災アプリ</h1>
-
-  <!-- ナビゲーション -->
-  <nav>
-    <a href="/">ホーム</a> |
-    <a href="/shelter_search">避難所検索</a> |
-    <a href="/shelter_register">避難所登録</a> |
-    <a href="/board">指示・発信ボード</a>
-    ｜
-    {% if session.logged_in %}
-      ログイン中{% if session.username %}（{{ session.username }}）{% endif %}
-      <a href="/logout">ログアウト</a>
-    {% else %}
-      未ログイン
-      <a href="/login">ログイン</a>
-    {% endif %}
-  </nav>
-  <hr>
+  <header class="site-header">
+    <div class="header-inner">
+      <h1 class="site-title">防災アプリ</h1>
+      <button class="menu-toggle" type="button" aria-label="メニューを開く" aria-expanded="false" aria-controls="siteNav">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M3 6h18M3 12h18M3 18h18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5"/>
+        </svg>
+      </button>
+    </div>
+    <nav class="site-nav" id="siteNav" aria-label="メインメニュー">
+      <a href="{{ url_for('index') }}">ホーム</a>
+      <a href="{{ url_for('shelter_search') }}">避難所検索</a>
+      <a href="{{ url_for('shelter_register') }}">避難所登録</a>
+      <a href="{{ url_for('board') }}">指示・発信ボード</a>
+      {% if session.logged_in %}
+        <div class="nav-account">ログイン中{% if session.username %}（{{ session.username }}）{% endif %}</div>
+        <a href="{{ url_for('logout') }}">ログアウト</a>
+      {% else %}
+        <div class="nav-account">未ログイン</div>
+        <a href="{{ url_for('login') }}">ログイン</a>
+      {% endif %}
+    </nav>
+  </header>
 
   <main>
-    <!-- ここに子テンプレートの content が入る -->
     {% block content %}{% endblock %}
   </main>
+  <script>
+    (() => {
+      const toggle = document.querySelector('.menu-toggle');
+      const nav = document.getElementById('siteNav');
+
+      function setMenuOpen(isOpen) {
+        nav.classList.toggle('is-open', isOpen);
+        toggle.setAttribute('aria-expanded', String(isOpen));
+        toggle.setAttribute('aria-label', isOpen ? 'メニューを閉じる' : 'メニューを開く');
+      }
+
+      toggle.addEventListener('click', () => {
+        setMenuOpen(toggle.getAttribute('aria-expanded') !== 'true');
+      });
+      document.addEventListener('click', (event) => {
+        if (!nav.contains(event.target) && !toggle.contains(event.target)) {
+          setMenuOpen(false);
+        }
+      });
+      document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+          setMenuOpen(false);
+          toggle.focus();
+        }
+      });
+    })();
+  </script>
+  {% block scripts %}{% endblock %}
 </body>
 </html>

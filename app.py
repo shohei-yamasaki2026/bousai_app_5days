@@ -28,8 +28,8 @@ ADMIN_CREDENTIALS = {
 PREFECTURE_CODE = "020000"  # 青森県
 AREA_NAME = "青森市"
 
-# ワークショップ課題：青森市の市区町村コードに変更する
-AREA_CODE = "1420500"
+# 気象庁の警報・注意報データにおける青森市の市区町村コード
+AREA_CODE = "0220100"
 
 WARNING_URL = (
     f"https://www.jma.go.jp/bosai/warning/data/r8/{PREFECTURE_CODE}.json"
@@ -90,6 +90,11 @@ def load_json(path, default):
             return json.load(f)
     except (FileNotFoundError, json.JSONDecodeError):
         return default
+
+def save_shelters():
+    """避難所データをファイルに保存する"""
+    with open(DATA_FILE, 'w', encoding='utf-8') as f:
+        json.dump(shelters, f, ensure_ascii=False, indent=2)
 
 shelters = load_json(DATA_FILE, [])
 instructions = load_json(INSTRUCTIONS_FILE, [])
@@ -157,10 +162,6 @@ def parse_area_warnings(warning_data):
         if not isinstance(report, dict):
             continue
 
-        report_datetime = report.get("reportDatetime")
-        if isinstance(report_datetime, str) and report_datetime:
-            report_datetimes.append(report_datetime)
-
         warning = report.get("warning")
         if not isinstance(warning, dict):
             continue
@@ -179,6 +180,10 @@ def parse_area_warnings(warning_data):
         )
         if not area:
             continue
+
+        report_datetime = report.get("reportDatetime")
+        if isinstance(report_datetime, str) and report_datetime:
+            report_datetimes.append(report_datetime)
 
         kinds = area.get("kinds", [])
         if not isinstance(kinds, list):
@@ -278,10 +283,46 @@ def logout():
     return redirect(url_for('index'))
 
 # 避難所登録ページ※user が避難所登録ページについて具体的に修正指示しない限り、このコードは正しいのでこのまま保持すること。
-@app.route('/shelter_register')
+@app.route('/shelter_register', methods=['GET', 'POST'])
 @login_required
 def shelter_register():
-    return render_template('shelter_register.html')
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        if not name:
+            return render_template(
+                'shelter_register.html',
+                error=True,
+                message="避難所名を入力してください。",
+                name=name
+            ), 400
+
+        existing_ids = [
+            shelter.get('id')
+            for shelter in shelters
+            if isinstance(shelter.get('id'), int)
+        ]
+        shelter = {'id': max(existing_ids, default=0) + 1, 'name': name}
+        shelters.append(shelter)
+        try:
+            save_shelters()
+        except OSError:
+            shelters.pop()
+            app.logger.exception("避難所データの保存に失敗しました")
+            return render_template(
+                'shelter_register.html',
+                error=True,
+                message="避難所情報を保存できませんでした。時間をおいて再度お試しください。",
+                name=name
+            ), 500
+
+        return render_template(
+            'shelter_register.html',
+            success=True,
+            message="避難所を登録しました。",
+            name=''
+        )
+
+    return render_template('shelter_register.html', name='')
 
 # 避難所検索ページ
 @app.route('/shelter_search')
