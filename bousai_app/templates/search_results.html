@@ -1,20 +1,210 @@
 {% extends "base.html" %}
 
+{% block title %}避難所検索結果 - 防災アプリ{% endblock %}
+
+{% block head_extra %}
+  <style>
+    .results-page {
+      display: grid;
+      gap: 18px;
+    }
+
+    .results-card {
+      padding: 26px;
+      border: 1px solid #e5eaf1;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 6px 22px rgb(36 60 93 / 7%);
+    }
+
+    .results-card h2 {
+      margin: 0 0 8px;
+      color: #244f91;
+      font-size: 25px;
+    }
+
+    .results-summary,
+    .results-note {
+      color: #536579;
+      line-height: 1.7;
+    }
+
+    .results-summary {
+      margin: 0 0 18px;
+    }
+
+    .active-filters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 0 0 18px;
+      padding: 0;
+      list-style: none;
+    }
+
+    .active-filters li {
+      padding: 6px 10px;
+      border-radius: 999px;
+      color: #244f91;
+      background: #eaf1fc;
+      font-size: 14px;
+      font-weight: 650;
+    }
+
+    .results-note {
+      margin: 18px 0 0;
+      font-size: 14px;
+    }
+
+    .shelter-list {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .shelter-item {
+      padding: 16px;
+      border: 1px solid #dbe3ed;
+      border-radius: 10px;
+      background: #fbfcfe;
+    }
+
+    .shelter-name {
+      margin: 0;
+      color: #26364a;
+      font-size: 18px;
+      font-weight: 750;
+    }
+
+    .shelter-name a {
+      color: #2855a1;
+      text-decoration: underline;
+      text-underline-offset: 3px;
+    }
+
+    .shelter-name a:hover,
+    .shelter-name a:focus-visible {
+      color: #1f447f;
+    }
+
+    .shelter-name a:focus-visible {
+      outline: 3px solid #85b7ff;
+      outline-offset: 3px;
+      border-radius: 2px;
+    }
+
+    .shelter-district {
+      margin: 7px 0 0;
+      color: #596a7e;
+      font-size: 14px;
+    }
+
+    .results-empty,
+    .results-error {
+      padding: 16px;
+      border-radius: 8px;
+      line-height: 1.7;
+    }
+
+    .results-empty {
+      border: 1px solid #d4dce7;
+      color: #43546a;
+      background: #f5f7fa;
+    }
+
+    .results-error {
+      border: 1px solid #d99a8d;
+      color: #8d2e22;
+      background: #fff2ef;
+    }
+
+    .results-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+    }
+
+    .results-actions a {
+      display: inline-flex;
+      min-height: 48px;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 18px;
+      border: 1px solid #aebaca;
+      border-radius: 9px;
+      color: #294b7b;
+      background: #fff;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .results-actions a:hover,
+    .results-actions a:focus-visible {
+      background: #eff5ff;
+    }
+
+    .results-actions a:focus-visible {
+      outline: 3px solid #85b7ff;
+      outline-offset: 2px;
+    }
+
+    @media (max-width: 600px) {
+      .results-card {
+        padding: 22px 18px;
+      }
+    }
+  </style>
+{% endblock %}
+
 {% block content %}
-<h2>検索結果</h2>
+<div class="results-page">
+  <section class="results-card" aria-labelledby="results-title">
+    <h2 id="results-title">{% if keyword or district or selected_conditions %}検索結果{% else %}避難所一覧{% endif %}</h2>
 
-{% if results %}
-  <ul>
-    {% for shelter in results %}
-    <li>{{ shelter.name }}</li>
-    {% endfor %}
-  </ul>
-{% else %}
-  <p>該当する避難所が見つかりませんでした</p>
-{% endif %}
+    {% if data_error %}
+      <p class="results-error" role="alert">避難所データを読み込めませんでした。時間をおいて再度お試しください。</p>
+    {% else %}
+      {% if keyword or district or selected_conditions %}
+        <ul class="active-filters" aria-label="検索条件">
+          {% if keyword %}<li>キーワード：{{ keyword }}</li>{% endif %}
+          {% if district %}<li>地域：{{ district }}</li>{% endif %}
+          {% for condition in selected_conditions %}<li>{{ condition }}</li>{% endfor %}
+        </ul>
+      {% endif %}
 
-<p>
-  <a href="/shelter_search">検索画面に戻る</a> |
-  <a href="/">トップページへ戻る</a>
-</p>
+      {% if results %}
+        <p class="results-summary" aria-live="polite">{{ results|length }}件の避難所が見つかりました。</p>
+        <ul class="shelter-list">
+          {% for shelter in results %}
+            <li class="shelter-item">
+              <p class="shelter-name">
+                {% if shelter.id is defined %}
+                  <a href="{{ url_for('shelter_detail', shelter_id=shelter.id, return_to=request.full_path) }}">{{ shelter.name }}</a>
+                {% else %}
+                  {{ shelter.name }}
+                {% endif %}
+              </p>
+              {% if shelter.district %}
+                <p class="shelter-district">地域：{{ shelter.district }}</p>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="results-empty" role="status">
+          条件に合う避難所が見つかりませんでした。検索語や地域の指定を変更するか、条件をクリアして再検索してください。条件に必要な情報が避難所データに登録されていない場合も、結果は0件になります。
+        </div>
+      {% endif %}
+    {% endif %}
+
+    <p class="results-note">この一覧は登録情報に基づく検索結果です。現在の開設状況や安全性を示すものではありません。避難の際は自治体などの最新情報を確認してください。</p>
+  </section>
+  <nav class="results-actions" aria-label="検索結果の操作">
+    <a href="{{ search_url }}">検索画面に戻る（条件を保持）</a>
+    <a href="{{ url_for('shelter_search') }}">条件をクリアして検索する</a>
+    <a href="{{ url_for('index') }}">トップページへ戻る</a>
+  </nav>
+</div>
 {% endblock %}

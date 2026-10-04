@@ -31,6 +31,17 @@ AREA_NAME = "青森市"
 # 気象庁の警報・注意報データにおける青森市の市区町村コード
 AREA_CODE = "0220100"
 
+# shelters.json stores the selected option keys in these list fields.
+DISASTER_TYPE_OPTIONS = (
+    ('tsunami', '津波'),
+    ('landslide', '土砂災害'),
+    ('flood', '洪水'),
+)
+FACILITY_OPTIONS = (
+    ('pets_allowed', 'ペット同伴'),
+    ('barrier_free', 'バリアフリー'),
+)
+
 WARNING_URL = (
     f"https://www.jma.go.jp/bosai/warning/data/r8/{PREFECTURE_CODE}.json"
 )
@@ -91,12 +102,24 @@ def load_json(path, default):
     except (FileNotFoundError, json.JSONDecodeError):
         return default
 
+def load_shelters():
+    """避難所データを読み込み、画面に通知できるよう失敗状態も返す"""
+    try:
+        with open(DATA_FILE, encoding='utf-8') as f:
+            data = json.load(f)
+        if not isinstance(data, list):
+            raise ValueError("避難所データが配列ではありません")
+        return data, False
+    except (OSError, json.JSONDecodeError, ValueError):
+        app.logger.exception("避難所データの読み込みに失敗しました")
+        return [], True
+
 def save_shelters():
     """避難所データをファイルに保存する"""
     with open(DATA_FILE, 'w', encoding='utf-8') as f:
         json.dump(shelters, f, ensure_ascii=False, indent=2)
 
-shelters = load_json(DATA_FILE, [])
+shelters, shelter_data_error = load_shelters()
 instructions = load_json(INSTRUCTIONS_FILE, [])
 
 def save_instructions():
@@ -147,6 +170,56 @@ def format_report_time(iso_str):
 def filter_shelters(district=None):
     """district 指定があれば一致する避難所のみ、なければ全件を返す"""
     return [s for s in shelters if not district or s.get('district') == district]
+
+def search_shelters(keyword='', district='', disaster_types=(), facilities=()):
+    """キーワード、地区、登録済みの災害対応・設備条件で避難所を検索する"""
+    normalized_keyword = keyword.strip().casefold()
+    return [
+        shelter for shelter in shelters
+        if isinstance(shelter, dict)
+        and (not district or shelter.get('district') == district)
+        and (
+            not disaster_types
+            or (
+                isinstance(shelter.get('disaster_types'), list)
+                and all(
+                    disaster_type in shelter['disaster_types']
+                    for disaster_type in disaster_types
+                )
+            )
+        )
+        and (
+            not facilities
+            or (
+                isinstance(shelter.get('facilities'), list)
+                and all(
+                    facility in shelter['facilities']
+                    for facility in facilities
+                )
+            )
+        )
+        and (
+            not normalized_keyword
+            or normalized_keyword in str(shelter.get('name', '')).casefold()
+            or normalized_keyword in str(shelter.get('district', '')).casefold()
+        )
+    ]
+
+def get_shelter_districts():
+    """実データに登録されている地区名のみを選択肢として返す"""
+    return sorted({
+        shelter['district']
+        for shelter in shelters
+        if isinstance(shelter, dict) and isinstance(shelter.get('district'), str)
+        and shelter['district'].strip()
+    })
+
+def get_shelter_return_url(candidate):
+    """検索結果一覧など、許可した同一サイト内の戻り先だけを受け付ける"""
+    parsed = urlparse(candidate or '')
+    if not parsed.netloc and parsed.path in ('/search_results', '/all_shelters'):
+        return candidate
+    return url_for('shelter_search')
 
 
 def parse_area_warnings(warning_data):
@@ -327,12 +400,68 @@ def shelter_register():
 # 避難所検索ページ
 @app.route('/shelter_search')
 def shelter_search():
-    return render_template('shelter_search.html')
+    selected_disaster_types = [
+        value for value in request.args.getlist('disaster_types')
+        if value in dict(DISASTER_TYPE_OPTIONS)
+    ]
+    selected_facilities = [
+        value for value in request.args.getlist('facilities')
+        if value in dict(FACILITY_OPTIONS)
+    ]
+    return render_template(
+        'shelter_search.html',
+        districts=get_shelter_districts(),
+        data_error=shelter_data_error,
+        keyword=request.args.get('keyword', ''),
+        selected_district=request.args.get('district', ''),
+        disaster_type_options=DISASTER_TYPE_OPTIONS,
+        facility_options=FACILITY_OPTIONS,
+        selected_disaster_types=selected_disaster_types,
+        selected_facilities=selected_facilities
+    )
 
 # 全施設一覧ページ
 @app.route('/all_shelters')
 def all_shelters():
-    return render_template('search_results.html', results=shelters)
+    return render_template(
+        'search_results.html',
+        results=shelters,
+        keyword='',
+        district='',
+        selected_conditions=[],
+        search_url=url_for('shelter_search'),
+        data_error=shelter_data_error
+    )
+
+@app.route('/shelters/<int:shelter_id>')
+def shelter_detail(shelter_id):
+    shelter = next(
+        (
+            item for item in shelters
+            if isinstance(item, dict)
+            and isinstance(item.get('id'), int)
+            and not isinstance(item.get('id'), bool)
+            and item['id'] == shelter_id
+        ),
+        None
+    )
+    return_url = get_shelter_return_url(request.args.get('return_to'))
+    if shelter is None:
+        return render_template(
+            'shelter_detail.html',
+            shelter=None,
+            return_url=return_url,
+            disaster_type_labels=dict(DISASTER_TYPE_OPTIONS),
+            facility_labels=dict(FACILITY_OPTIONS)
+        ), 404
+
+    return render_template(
+        'shelter_detail.html',
+        shelter=shelter,
+        return_url=return_url,
+        disaster_type_labels=dict(DISASTER_TYPE_OPTIONS),
+        facility_labels=dict(FACILITY_OPTIONS)
+    )
 
 
 # 指示ボード：住民向けの指示を一覧で確認する
@@ -345,8 +474,49 @@ def board():
 # 検索結果ページ：templates/search_results.html を返す
 @app.route('/search_results')
 def search_results():
-    results = filter_shelters(request.args.get('district'))
-    return render_template('search_results.html', results=results)
+    keyword = request.args.get('keyword', '').strip()
+    district = request.args.get('district', '').strip()
+    selected_disaster_types = [
+        value for value in request.args.getlist('disaster_types')
+        if value in dict(DISASTER_TYPE_OPTIONS)
+    ]
+    selected_facilities = [
+        value for value in request.args.getlist('facilities')
+        if value in dict(FACILITY_OPTIONS)
+    ]
+    results = search_shelters(
+        keyword,
+        district,
+        selected_disaster_types,
+        selected_facilities
+    )
+    selected_conditions = [
+        label for value, label in DISASTER_TYPE_OPTIONS
+        if value in selected_disaster_types
+    ] + [
+        label for value, label in FACILITY_OPTIONS
+        if value in selected_facilities
+    ]
+    search_args = {}
+    if keyword:
+        search_args['keyword'] = keyword
+    if district:
+        search_args['district'] = district
+    if selected_disaster_types:
+        search_args['disaster_types'] = selected_disaster_types
+    if selected_facilities:
+        search_args['facilities'] = selected_facilities
+    return render_template(
+        'search_results.html',
+        results=results,
+        keyword=keyword,
+        district=district,
+        selected_disaster_types=selected_disaster_types,
+        selected_facilities=selected_facilities,
+        selected_conditions=selected_conditions,
+        search_url=url_for('shelter_search', **search_args),
+        data_error=shelter_data_error
+    )
 
 # JSON API：/shelters?district=地区名
 @app.route('/shelters', methods=['GET'])

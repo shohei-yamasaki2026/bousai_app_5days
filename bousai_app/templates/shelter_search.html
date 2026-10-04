@@ -1,8 +1,309 @@
 {% extends "base.html" %}
 
-{% block content %}
-<h2>避難所検索</h2>
-<p>登録されている避難所を確認できます。</p>
+{% block title %}避難所検索 - 防災アプリ{% endblock %}
 
-<p><a href="/all_shelters">全施設一覧</a></p>
+{% block head_extra %}
+  <style>
+    .search-page {
+      display: grid;
+      gap: 20px;
+    }
+
+    .search-card {
+      padding: 28px;
+      border: 1px solid #e5eaf1;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 6px 22px rgb(36 60 93 / 7%);
+    }
+
+    .search-card h2 {
+      margin: 0 0 8px;
+      color: #244f91;
+      font-size: 26px;
+    }
+
+    .search-intro {
+      margin: 0 0 22px;
+      color: #536579;
+      line-height: 1.7;
+    }
+
+    .search-form {
+      display: grid;
+      gap: 18px;
+    }
+
+    .search-field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .search-options {
+      display: grid;
+      gap: 10px;
+      margin: 0;
+      padding: 16px;
+      border: 1px solid #d7e0eb;
+      border-radius: 10px;
+    }
+
+    .search-options legend {
+      padding: 0 6px;
+      color: #26364a;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .search-option {
+      display: flex;
+      min-height: 48px;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 10px;
+      border-radius: 7px;
+      color: #26364a;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .search-option:hover {
+      background: #f2f6fc;
+    }
+
+    .search-option input {
+      width: 22px;
+      height: 22px;
+      flex: 0 0 auto;
+      margin: 0;
+      accent-color: #2855a1;
+    }
+
+    .search-field label {
+      color: #26364a;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .search-field input,
+    .search-field select {
+      width: 100%;
+      min-height: 50px;
+      padding: 10px 12px;
+      border: 1px solid #aebaca;
+      border-radius: 8px;
+      color: #26364a;
+      background: #fff;
+      font: inherit;
+      font-size: 16px;
+    }
+
+    .search-field input:focus-visible,
+    .search-field select:focus-visible,
+    .search-option input:focus-visible,
+    .search-actions a:focus-visible,
+    .search-actions button:focus-visible {
+      outline: 3px solid #85b7ff;
+      outline-offset: 2px;
+    }
+
+    .search-hint,
+    .data-limit,
+    .safety-note {
+      margin: 0;
+      color: #596a7e;
+      font-size: 14px;
+      line-height: 1.65;
+    }
+
+    .data-limit {
+      padding: 14px 16px;
+      border-left: 4px solid #7990aa;
+      border-radius: 4px;
+      background: #f2f5f8;
+    }
+
+    .search-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      align-items: center;
+      margin-top: 4px;
+    }
+
+    .search-actions button,
+    .search-actions a {
+      display: inline-flex;
+      min-height: 48px;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 20px;
+      border: 1px solid transparent;
+      border-radius: 9px;
+      font: inherit;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .search-submit {
+      color: #fff;
+      background: #2855a1;
+    }
+
+    .search-submit:hover {
+      background: #1f447f;
+    }
+
+    .search-clear {
+      color: #294b7b;
+      background: #fff;
+      border-color: #aebaca !important;
+    }
+
+    .search-clear:hover,
+    .all-shelters-link:hover {
+      background: #eff5ff;
+    }
+
+    .all-shelters-link {
+      color: #294b7b;
+      background: #f7f9fc;
+      border-color: #d4dce7 !important;
+    }
+
+    .search-error {
+      padding: 14px 16px;
+      border: 1px solid #d99a8d;
+      border-radius: 8px;
+      color: #8d2e22;
+      background: #fff2ef;
+      font-weight: 650;
+      line-height: 1.6;
+    }
+
+    @media (max-width: 600px) {
+      .search-card {
+        padding: 22px 18px;
+      }
+
+      .search-card h2 {
+        font-size: 23px;
+      }
+
+      .search-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+      }
+
+      .search-submit {
+        grid-column: 1 / -1;
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block scripts %}
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const form = document.querySelector('.search-form');
+      if (!form) return;
+
+      form.addEventListener('reset', (event) => {
+        event.preventDefault();
+        form.querySelectorAll('input').forEach((input) => {
+          if (input.type === 'checkbox' || input.type === 'radio') {
+            input.checked = false;
+          } else {
+            input.value = '';
+          }
+        });
+        form.querySelectorAll('select').forEach((select) => {
+          select.selectedIndex = 0;
+        });
+      });
+    });
+  </script>
+{% endblock %}
+
+{% block content %}
+<div class="search-page">
+  <section class="search-card" aria-labelledby="search-title">
+    <h2 id="search-title">避難所を探す</h2>
+    <p class="search-intro">避難所名や登録済みの地域名から検索できます。</p>
+
+    {% if data_error %}
+      <p class="search-error" role="alert">避難所データを読み込めませんでした。時間をおいて再度お試しください。</p>
+    {% else %}
+      <form class="search-form" action="{{ url_for('search_results') }}" method="get">
+        <div class="search-field">
+          <label for="keyword">避難所名・地域名</label>
+          <input
+            type="search"
+            id="keyword"
+            name="keyword"
+            placeholder="例：小学校、地域名"
+            autocomplete="off"
+            value="{{ keyword }}"
+          >
+          <p class="search-hint">入力した文字を避難所名と登録済み地域名から検索します。</p>
+        </div>
+
+        {% if districts %}
+          <div class="search-field">
+            <label for="district">地域で絞り込む</label>
+            <select id="district" name="district">
+              <option value="" {% if not selected_district %}selected{% endif %}>すべての地域</option>
+              {% for district_name in districts %}
+                <option value="{{ district_name }}" {% if district_name == selected_district %}selected{% endif %}>{{ district_name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+        {% endif %}
+
+        <fieldset class="search-options">
+          <legend>災害種別</legend>
+          {% for value, label in disaster_type_options %}
+            <label class="search-option">
+              <input
+                type="checkbox"
+                name="disaster_types"
+                value="{{ value }}"
+                {% if value in selected_disaster_types %}checked{% endif %}
+              >
+              <span>{{ label }}</span>
+            </label>
+          {% endfor %}
+        </fieldset>
+
+        <fieldset class="search-options">
+          <legend>設備・利用条件</legend>
+          {% for value, label in facility_options %}
+            <label class="search-option">
+              <input
+                type="checkbox"
+                name="facilities"
+                value="{{ value }}"
+                {% if value in selected_facilities %}checked{% endif %}
+              >
+              <span>{{ label }}</span>
+            </label>
+          {% endfor %}
+        </fieldset>
+
+        <p class="search-hint">選択した条件をすべて満たす避難所を検索します。</p>
+        <p class="data-limit">
+          災害種別・設備条件は避難所データの登録情報で判定します。未登録の項目は条件に一致しません。現在の避難所データにこれらの情報が登録されていない場合、条件を指定すると検索結果が0件になることがあります。
+        </p>
+
+        <div class="search-actions">
+          <button class="search-submit" type="submit">避難所を検索</button>
+          <button class="search-clear" type="reset">入力をクリア</button>
+          <a class="all-shelters-link" href="{{ url_for('all_shelters') }}">全施設を見る</a>
+        </div>
+      </form>
+    {% endif %}
+  </section>
+  <p class="safety-note">検索結果は登録情報の一覧です。現在の開設状況や安全性を示すものではありません。避難の際は自治体などの最新情報を確認してください。</p>
+</div>
 {% endblock %}

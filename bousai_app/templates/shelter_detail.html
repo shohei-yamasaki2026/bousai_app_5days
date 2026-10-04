@@ -1,0 +1,162 @@
+{% extends "base.html" %}
+
+{% block title %}{% if shelter %}{{ shelter.name }}の詳細{% else %}避難所が見つかりません{% endif %} - 防災アプリ{% endblock %}
+
+{% block head_extra %}
+  <style>
+    .detail-card {
+      padding: 26px;
+      border: 1px solid #e5eaf1;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 6px 22px rgb(36 60 93 / 7%);
+    }
+
+    .detail-card h2 {
+      margin: 0 0 20px;
+      color: #244f91;
+      font-size: 25px;
+      line-height: 1.4;
+      overflow-wrap: anywhere;
+    }
+
+    .detail-list {
+      display: grid;
+      gap: 0;
+      margin: 0;
+    }
+
+    .detail-row {
+      display: grid;
+      grid-template-columns: minmax(150px, 1fr) 2fr;
+      gap: 16px;
+      padding: 15px 0;
+      border-top: 1px solid #e5eaf1;
+      line-height: 1.7;
+    }
+
+    .detail-row dt {
+      color: #43546a;
+      font-weight: 700;
+    }
+
+    .detail-row dd {
+      margin: 0;
+      color: #26364a;
+      overflow-wrap: anywhere;
+    }
+
+    .detail-unregistered,
+    .detail-error,
+    .detail-note {
+      color: #596a7e;
+    }
+
+    .detail-error {
+      margin: 0;
+      line-height: 1.7;
+    }
+
+    .detail-note {
+      margin: 20px 0 0;
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .detail-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 18px;
+    }
+
+    .detail-actions a {
+      display: inline-flex;
+      min-height: 48px;
+      align-items: center;
+      justify-content: center;
+      padding: 10px 18px;
+      border: 1px solid #aebaca;
+      border-radius: 9px;
+      color: #294b7b;
+      background: #fff;
+      font-weight: 700;
+      text-decoration: none;
+    }
+
+    .detail-actions a:hover,
+    .detail-actions a:focus-visible {
+      background: #eff5ff;
+    }
+
+    .detail-actions a:focus-visible {
+      outline: 3px solid #85b7ff;
+      outline-offset: 2px;
+    }
+
+    @media (max-width: 600px) {
+      .detail-card {
+        padding: 22px 18px;
+      }
+
+      .detail-row {
+        grid-template-columns: 1fr;
+        gap: 4px;
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<section class="detail-card" aria-labelledby="detail-title">
+  {% if shelter %}
+    <h2 id="detail-title">{{ shelter.name }}</h2>
+    <dl class="detail-list">
+      <div class="detail-row">
+        <dt>住所</dt>
+        <dd>{% if shelter.address %}{{ shelter.address }}{% else %}<span class="detail-unregistered">未登録</span>{% endif %}</dd>
+      </div>
+      <div class="detail-row">
+        <dt>地域</dt>
+        <dd>{% if shelter.district %}{{ shelter.district }}{% else %}<span class="detail-unregistered">未登録</span>{% endif %}</dd>
+      </div>
+      <div class="detail-row">
+        <dt>対応する災害種別</dt>
+        <dd>
+          {% if shelter.disaster_types is defined and shelter.disaster_types %}
+            {% for value in shelter.disaster_types %}
+              {% if not loop.first %}、{% endif %}{{ disaster_type_labels.get(value, value) }}
+            {% endfor %}
+          {% else %}
+            <span class="detail-unregistered">未登録（非対応を意味しません）</span>
+          {% endif %}
+        </dd>
+      </div>
+      <div class="detail-row">
+        <dt>設備・利用条件</dt>
+        <dd>
+          {% if shelter.facilities is defined and shelter.facilities %}
+            {% for value in shelter.facilities %}
+              {% if not loop.first %}、{% endif %}{{ facility_labels.get(value, value) }}
+            {% endfor %}
+          {% else %}
+            <span class="detail-unregistered">未登録（利用不可を意味しません）</span>
+          {% endif %}
+        </dd>
+      </div>
+      <div class="detail-row">
+        <dt>現在の開設状況</dt>
+        <dd>{% if shelter.opening_status %}{{ shelter.opening_status }}{% else %}<span class="detail-unregistered">未登録（閉鎖中を意味しません）</span>{% endif %}</dd>
+      </div>
+    </dl>
+    <p class="detail-note">このページは登録情報を表示しています。現在の開設状況や安全性については、自治体などの最新情報を確認してください。</p>
+  {% else %}
+    <h2 id="detail-title">避難所が見つかりません</h2>
+    <p class="detail-error" role="alert">指定されたIDの避難所は登録されていないか、削除された可能性があります。</p>
+  {% endif %}
+</section>
+<nav class="detail-actions" aria-label="避難所詳細の操作">
+  <a href="{{ return_url }}">検索結果に戻る</a>
+  <a href="{{ url_for('shelter_search') }}">避難所を検索する</a>
+</nav>
+{% endblock %}
