@@ -22,5 +22,24 @@
   {
     "id": 8,
     "name": "あああ"
+  },
+  {
+    "id": 9,
+    "name": "あいうｙ",
+    "address": "青森県青森市大谷小谷１−５",
+    "district": "青森",
+    "capacity": 300,
+    "disasters": [
+      "flood"
+    ],
+    "disaster_types": [
+      "flood"
+    ],
+    "facilities": [
+      "pets_allowed",
+      "barrier_free"
+    ],
+    "status": "未開設",
+    "opening_status": "未開設"
   }
 ]

@@ -17,10 +17,10 @@
       box-shadow: 0 6px 22px rgb(36 60 93 / 7%);
     }
 
-    .board-card h2 {
+    .board-card h2,
+    .board-card h3 {
       margin: 0 0 14px;
       color: #244f91;
-      font-size: 24px;
     }
 
     .board-form,
@@ -37,7 +37,7 @@
       font-weight: 700;
     }
 
-    .board-field input,
+    .board-field input:not([type="checkbox"]),
     .board-field select,
     .board-field textarea {
       width: 100%;
@@ -56,9 +56,28 @@
     }
 
     .board-field :focus-visible,
-    .board-button:focus-visible {
+    .board-button:focus-visible,
+    .board-sort a:focus-visible {
       outline: 3px solid #85b7ff;
       outline-offset: 2px;
+    }
+
+    .board-checkbox {
+      display: inline-flex;
+      width: fit-content;
+      min-height: 44px;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 0;
+      font-weight: 650;
+      cursor: pointer;
+    }
+
+    .board-checkbox input {
+      width: 22px;
+      height: 22px;
+      margin: 0;
+      accent-color: #2855a1;
     }
 
     .board-button {
@@ -73,15 +92,45 @@
       cursor: pointer;
     }
 
-    .board-error {
+    .board-error,
+    .board-success {
       padding: 12px 14px;
-      border: 1px solid #d99a8d;
       border-radius: 8px;
+      line-height: 1.65;
+    }
+
+    .board-error {
+      border: 1px solid #d99a8d;
       color: #8d2e22;
       background: #fff2ef;
     }
 
-    .instruction-records {
+    .board-success {
+      border: 1px solid #93c6a1;
+      color: #205e32;
+      background: #effaf1;
+    }
+
+    .board-sort {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-bottom: 16px;
+    }
+
+    .board-sort a {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      padding: 8px 12px;
+      border: 1px solid #aebaca;
+      border-radius: 8px;
+      color: #294b7b;
+      text-decoration: none;
+    }
+
+    .instruction-records,
+    .announcement-records {
       display: grid;
       gap: 12px;
       margin: 0;
@@ -89,7 +138,8 @@
       list-style: none;
     }
 
-    .instruction-record {
+    .instruction-record,
+    .announcement-record {
       padding: 16px;
       border: 1px solid #dbe3ed;
       border-radius: 10px;
@@ -97,13 +147,40 @@
       line-height: 1.7;
     }
 
-    .instruction-record.is-emergency {
+    .instruction-record.priority-high {
       border-color: #d99a8d;
-      color: #8d2e22;
-      background: #fff2ef;
+      background: #fff7f5;
+      color: #61251f;
     }
 
-    .instruction-meta {
+    .priority-label {
+      display: inline-block;
+      margin-right: 8px;
+      padding: 2px 8px;
+      border-radius: 999px;
+      color: #26364a;
+      background: #e9edf3;
+      font-size: 14px;
+      font-weight: 750;
+    }
+
+    .priority-high .priority-label {
+      color: #fff;
+      background: #8d2e22;
+    }
+
+    .priority-medium .priority-label {
+      color: #fff;
+      background: #78510c;
+    }
+
+    .priority-low .priority-label {
+      color: #fff;
+      background: #43546a;
+    }
+
+    .instruction-meta,
+    .announcement-meta {
       display: flex;
       flex-wrap: wrap;
       gap: 6px 16px;
@@ -115,8 +192,57 @@
     .instruction-status-form {
       display: flex;
       flex-wrap: wrap;
+      align-items: center;
       gap: 8px;
       margin-top: 12px;
+    }
+
+    .instruction-status-form select {
+      min-height: 42px;
+      padding: 6px 10px;
+      border: 1px solid #aebaca;
+      border-radius: 8px;
+      background: #fff;
+      font: inherit;
+    }
+
+    .board-display-tools {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .board-display-tools button {
+      min-height: 42px;
+      padding: 7px 11px;
+      border: 1px solid #aebaca;
+      border-radius: 8px;
+      color: #294b7b;
+      background: #fff;
+      font: inherit;
+      cursor: pointer;
+    }
+
+    .board-display-tools button[aria-pressed="true"] {
+      border-color: #2855a1;
+      color: #fff;
+      background: #2855a1;
+    }
+
+    .board-page.text-large {
+      font-size: 1.15rem;
+    }
+
+    .board-page.text-xlarge {
+      font-size: 1.3rem;
+    }
+
+    .board-page.easy-japanese .easy-content {
+      font-size: 1.08em;
+      line-height: 2;
+      letter-spacing: .03em;
     }
 
     @media (max-width: 600px) {
@@ -128,64 +254,217 @@
 {% endblock %}
 
 {% block content %}
-<div class="board-page">
-  <section class="board-card" aria-labelledby="board-title">
-    <h2 id="board-title">住民向け指示を発信</h2>
-    <p>ここで発信した有効な指示は、ホーム画面上部に表示されます。災害情報（状況のお知らせ）とは別に管理されます。</p>
+<div class="board-page" id="boardPage">
+  <section class="board-card" aria-labelledby="instruction-form-title">
+    <h2 id="instruction-form-title">災害対応の指示を登録</h2>
     {% if error %}<p class="board-error" role="alert">{{ error }}</p>{% endif %}
-    <form class="board-form" method="post" action="{{ url_for('board') }}">
+    {% if success_message %}<p class="board-success" role="status">{{ success_message }}</p>{% endif %}
+    <form class="board-form" method="post" action="{{ url_for('board', sort=sort_order) }}" data-confirm="instruction">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="action" value="create">
+      <input type="hidden" name="action" value="create_instruction">
       <div class="board-field">
-        <label for="content">指示内容（必須・500文字以内）</label>
-        <textarea id="content" name="content" maxlength="500" required>{{ form_data.content or '' }}</textarea>
-      </div>
-      <div class="board-field">
-        <label for="urgency">緊急度</label>
-        <select id="urgency" name="urgency">
-          <option value="通常" {% if form_data.urgency != '緊急' %}selected{% endif %}>通常</option>
-          <option value="緊急" {% if form_data.urgency == '緊急' %}selected{% endif %}>緊急</option>
+        <label for="instruction-target">対象</label>
+        <select id="instruction-target" name="target" required>
+          {% for value in ('住民', '防災担当部署', '道路管理担当部署', 'その他') %}
+            <option value="{{ value }}" {% if instruction_form_data.target == value %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
         </select>
       </div>
       <div class="board-field">
-        <label for="shelter">避難先（任意）</label>
-        <input id="shelter" name="shelter" maxlength="120" value="{{ form_data.shelter or '' }}">
+        <label for="instruction-area">対象地区</label>
+        <input id="instruction-area" name="target_area" maxlength="100" value="{{ instruction_form_data.target_area or '' }}" placeholder="例：中央地区">
       </div>
-      <button class="board-button" type="submit">指示を発信</button>
+      <div class="board-field">
+        <label for="instruction-recipient">宛先</label>
+        <select id="instruction-recipient" name="recipient" required>
+          {% for value in ('住民向け', '担当部署', '防災担当部署', '道路管理担当部署') %}
+            <option value="{{ value }}" {% if instruction_form_data.recipient == value %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="board-field">
+        <label for="instruction-priority">緊急度</label>
+        <select id="instruction-priority" name="priority" required>
+          {% for value in instruction_priorities %}
+            <option value="{{ value }}" {% if instruction_form_data.priority == value or (not instruction_form_data.priority and value == '中') %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="board-field">
+        <label for="instruction-content">指示内容（必須・2000文字以内）</label>
+        <textarea id="instruction-content" name="content" maxlength="2000" required>{{ instruction_form_data.content or '' }}</textarea>
+      </div>
+      <div class="board-field">
+        <label for="instruction-shelter">避難先（任意）</label>
+        <input id="instruction-shelter" name="shelter" maxlength="120" value="{{ instruction_form_data.shelter or '' }}">
+      </div>
+      <button class="board-button" type="submit">確認して指示を登録</button>
+    </form>
+  </section>
+
+  <section class="board-card" aria-labelledby="announcement-form-title">
+    <h2 id="announcement-form-title">住民向けに発信</h2>
+    <p>災害情報（状況のお知らせ）とは別の、住民への発信履歴です。</p>
+    <form class="board-form" method="post" action="{{ url_for('board', sort=sort_order) }}" data-confirm="announcement">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="create_announcement">
+      <div class="board-field">
+        <label for="announcement-recipient">発信先</label>
+        <input id="announcement-recipient" name="recipient" maxlength="120" required value="{{ announcement_form_data.recipient or '' }}" placeholder="例：住民向け">
+      </div>
+      <div class="board-field">
+        <label for="announcement-area">対象地区</label>
+        <input id="announcement-area" name="target_area" maxlength="100" value="{{ announcement_form_data.target_area or '' }}" placeholder="例：中央地区">
+      </div>
+      <div class="board-field">
+        <label for="announcement-content">発信内容（必須・2000文字以内）</label>
+        <textarea id="announcement-content" name="content" maxlength="2000" required>{{ announcement_form_data.content or '' }}</textarea>
+      </div>
+      <label class="board-checkbox" for="display-on-home">
+        <input id="display-on-home" type="checkbox" name="display_on_home" {% if announcement_form_data.display_on_home %}checked{% endif %}>
+        <span>ホーム画面に表示する</span>
+      </label>
+      <button class="board-button" type="submit">確認して発信</button>
     </form>
   </section>
 
   <section class="board-card" aria-labelledby="instruction-list-title">
-    <h2 id="instruction-list-title">住民向け指示の一覧</h2>
+    <h2 id="instruction-list-title">指示一覧</h2>
+    <nav class="board-sort" aria-label="指示の並び替え">
+      <a href="{{ url_for('board', sort='recent') }}" {% if sort_order == 'recent' %}aria-current="page"{% endif %}>新しい順</a>
+      <a href="{{ url_for('board', sort='priority') }}" {% if sort_order == 'priority' %}aria-current="page"{% endif %}>緊急度順</a>
+    </nav>
     {% if instructions %}
       <ul class="instruction-records">
         {% for instruction in instructions %}
-          <li class="instruction-record{% if instruction.urgency == '緊急' %} is-emergency{% endif %}">
-            {% if instruction.urgency == '緊急' %}<strong>【緊急】</strong>{% endif %}{{ instruction.content }}
+          {% set priority = instruction.priority or instruction.urgency or '未登録' %}
+          <li class="instruction-record{% if priority == '高' or priority == '緊急' %} priority-high{% elif priority == '中' %} priority-medium{% elif priority == '低' %} priority-low{% endif %}">
+            <span class="priority-label">緊急度：{{ priority }}</span>
+            <span class="easy-content">{{ instruction.content or '未登録' }}</span>
             <div class="instruction-meta">
-              <span>状態：{{ instruction.status or '未登録' }}</span>
-              <span>発信日時：{{ instruction.created_at or '未登録' }}</span>
+              <span>対象：{{ instruction.target or '未登録' }}</span>
+              <span>対象地区：{{ instruction.target_area or '未登録' }}</span>
+              <span>宛先：{{ instruction.recipient or '未登録' }}</span>
+              <span>作成日時：{{ instruction.created_at or '未登録' }}</span>
+              <span>対応状況：{{ instruction.display_status }}</span>
               {% if instruction.shelter %}<span>避難先：{{ instruction.shelter }}</span>{% endif %}
             </div>
-            {% if instruction.status in ('有効', '発信中', 'active', 'published') %}
-              <form class="instruction-status-form" method="post" action="{{ url_for('board') }}">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-                <input type="hidden" name="action" value="update_status">
-                <input type="hidden" name="instruction_id" value="{{ instruction.id }}">
-                <label for="status-{{ instruction.id }}">状態を変更</label>
-                <select id="status-{{ instruction.id }}" name="status">
-                  <option value="解除">解除</option>
-                  <option value="終了">終了</option>
-                </select>
-                <button class="board-button" type="submit">状態を保存</button>
-              </form>
-            {% endif %}
+            <form class="instruction-status-form" method="post" action="{{ url_for('board', sort=sort_order) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="action" value="update_instruction_status">
+              <input type="hidden" name="instruction_id" value="{{ instruction.id }}">
+              <label for="status-{{ instruction.id }}">対応状況</label>
+              <select id="status-{{ instruction.id }}" name="status">
+                {% for value in instruction_statuses %}
+                  <option value="{{ value }}" {% if instruction.display_status == value %}selected{% endif %}>{{ value }}</option>
+                {% endfor %}
+              </select>
+              <button class="board-button" type="submit">状況を更新</button>
+            </form>
           </li>
         {% endfor %}
       </ul>
     {% else %}
-      <p>住民向け指示はありません。</p>
+      <p>登録されている指示はありません。</p>
     {% endif %}
   </section>
+
+  <section class="board-card" aria-labelledby="announcement-list-title">
+    <h2 id="announcement-list-title">住民向け発信履歴</h2>
+    {% if announcements %}
+      <ul class="announcement-records">
+        {% for announcement in announcements %}
+          <li class="announcement-record">
+            <span class="easy-content">{{ announcement.content }}</span>
+            <div class="announcement-meta">
+              <span>発信先：{{ announcement.recipient }}</span>
+              <span>対象地区：{{ announcement.target_area or '未指定' }}</span>
+              <span>発信日時：{{ announcement.sent_at or '未登録' }}</span>
+              <span>ホーム表示：{{ '表示する' if announcement.display_on_home else '表示しない' }}</span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>発信履歴はありません。</p>
+    {% endif %}
+  </section>
+
+  <section class="board-card" aria-labelledby="display-tools-title">
+    <h2 id="display-tools-title">表示補助</h2>
+    <div class="board-display-tools" aria-label="表示補助設定">
+      <span>文字サイズ</span>
+      <button type="button" data-text-size="standard" aria-pressed="true">標準</button>
+      <button type="button" data-text-size="large" aria-pressed="false">大</button>
+      <button type="button" data-text-size="xlarge" aria-pressed="false">特大</button>
+      <button type="button" id="easyJapaneseToggle" aria-pressed="false">やさしい日本語</button>
+    </div>
+    <p id="easyJapaneseStatus" role="status" aria-live="polite"></p>
+  </section>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelectorAll('form[data-confirm]').forEach((form) => {
+    form.addEventListener('submit', (event) => {
+      const value = (name) => form.elements.namedItem(name)?.value?.trim() || '未入力';
+      const details = form.dataset.confirm === 'instruction'
+        ? `対象：${value('target')}\n対象地区：${value('target_area')}\n宛先：${value('recipient')}\n緊急度：${value('priority')}\n内容：${value('content')}\n避難先：${value('shelter')}`
+        : `発信先：${value('recipient')}\n対象地区：${value('target_area')}\n内容：${value('content')}\nホーム表示：${form.elements.namedItem('display_on_home').checked ? 'する' : 'しない'}`;
+      if (!window.confirm(`次の内容で${form.dataset.confirm === 'instruction' ? '登録' : '発信'}します。\n\n${details}`)) {
+        event.preventDefault();
+      }
+    });
+  });
+
+  const boardPage = document.getElementById('boardPage');
+  document.querySelectorAll('[data-text-size]').forEach((button) => {
+    button.addEventListener('click', () => {
+      boardPage.classList.remove('text-large', 'text-xlarge');
+      if (button.dataset.textSize === 'large') boardPage.classList.add('text-large');
+      if (button.dataset.textSize === 'xlarge') boardPage.classList.add('text-xlarge');
+      document.querySelectorAll('[data-text-size]').forEach((item) => {
+        item.setAttribute('aria-pressed', String(item === button));
+      });
+    });
+  });
+
+  const easyJapaneseToggle = document.getElementById('easyJapaneseToggle');
+  const boardTextNodes = [];
+  const textWalker = document.createTreeWalker(boardPage, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      return node.parentElement.closest('script, style, textarea, input') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT;
+    }
+  });
+  while (textWalker.nextNode()) {
+    boardTextNodes.push({ node: textWalker.currentNode, original: textWalker.currentNode.nodeValue });
+  }
+  const easyJapaneseTerms = [
+    ['対応状況', '今の状況'],
+    ['対象地区', '対象の地域'],
+    ['避難先', 'にげる場所'],
+    ['緊急度', '急ぎの度合い'],
+    ['発信日時', '知らせた日時'],
+    ['発信履歴', '知らせた記録'],
+    ['登録済み', '登録した'],
+    ['未対応', 'まだ対応していない'],
+    ['対応中', '対応している'],
+    ['完了', '終わり'],
+    ['確認して', '内容を見て']
+  ];
+  easyJapaneseToggle.addEventListener('click', () => {
+    const enabled = easyJapaneseToggle.getAttribute('aria-pressed') !== 'true';
+    easyJapaneseToggle.setAttribute('aria-pressed', String(enabled));
+    boardPage.classList.toggle('easy-japanese', enabled);
+    boardTextNodes.forEach(({ node, original }) => {
+      node.nodeValue = enabled
+        ? easyJapaneseTerms.reduce((text, [term, plain]) => text.replaceAll(term, plain), original)
+        : original;
+    });
+    document.getElementById('easyJapaneseStatus').textContent = enabled
+      ? 'やさしい日本語表示を有効にしました。文章を大きく、読みやすく表示します。'
+      : '通常の表示に戻しました。';
+  });
+</script>
 {% endblock %}

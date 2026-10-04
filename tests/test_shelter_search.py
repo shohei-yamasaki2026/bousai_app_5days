@@ -122,6 +122,80 @@ class ShelterSearchTests(unittest.TestCase):
         self.assertIn(b'href="/shelters/1?return_to=', response.data)
         self.assertIn('青葉小学校'.encode(), response.data)
 
+    def test_search_results_compare_registered_shelter_information(self):
+        with patch.object(
+            app_module,
+            'shelters',
+            [{
+                'id': 10,
+                'name': '比較用避難所',
+                'address': '青森市中央一丁目',
+                'district': '中央区',
+                'capacity': 100,
+                'current_occupants': 70,
+                'status': '開設中',
+                'facilities': ['pets_allowed', 'barrier_free', 'wifi'],
+                'disasters': ['earthquake', 'flood']
+            }]
+        ):
+            response = self.client.get('/search_results')
+
+        self.assertEqual(response.status_code, 200)
+        for value in (
+            '比較用避難所',
+            '青森市中央一丁目',
+            '開設中',
+            '100人',
+            '70人',
+            '混雑',
+            'ペット可',
+            'バリアフリー',
+            'Wi-Fi',
+            '地震',
+            '洪水'
+        ):
+            self.assertIn(value.encode(), response.data)
+        self.assertIn('🐾'.encode(), response.data)
+        self.assertIn('♿'.encode(), response.data)
+
+    def test_crowding_thresholds_are_displayed_correctly(self):
+        with patch.object(
+            app_module,
+            'shelters',
+            [
+                {'id': 11, 'name': '空きあり施設', 'capacity': 100, 'current_occupants': 69},
+                {'id': 12, 'name': '混雑施設', 'capacity': 100, 'current_occupants': 70},
+                {'id': 13, 'name': '満員施設', 'capacity': 100, 'current_occupants': 100}
+            ]
+        ):
+            response = self.client.get('/search_results')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('空きあり施設'.encode(), response.data)
+        self.assertIn('混雑施設'.encode(), response.data)
+        self.assertIn('満員施設'.encode(), response.data)
+        self.assertIn('is-available">空きあり'.encode(), response.data)
+        self.assertIn('is-busy">混雑'.encode(), response.data)
+        self.assertIn('is-full">満員'.encode(), response.data)
+
+    def test_missing_comparison_fields_are_shown_as_unregistered(self):
+        response = self.client.get('/search_results?keyword=%E9%9D%92%E8%91%89%E3%82%B3%E3%83%9F%E3%83%A5%E3%83%8B%E3%83%86%E3%82%A3')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('住所'.encode(), response.data)
+        self.assertIn('収容人数'.encode(), response.data)
+        self.assertIn('現在の避難者数'.encode(), response.data)
+        self.assertIn('未登録'.encode(), response.data)
+        self.assertNotIn('満員'.encode(), response.data)
+
+    def test_empty_results_keep_search_and_home_navigation(self):
+        response = self.client.get('/search_results?keyword=missing')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('条件に合う避難所がありません'.encode(), response.data)
+        self.assertIn('検索画面に戻る'.encode(), response.data)
+        self.assertIn('トップページへ戻る'.encode(), response.data)
+
     def test_detail_page_shows_registered_fields_and_marks_missing_data(self):
         response = self.client.get('/shelters/1')
 

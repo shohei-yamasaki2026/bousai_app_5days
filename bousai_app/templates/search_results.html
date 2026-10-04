@@ -71,6 +71,97 @@
       background: #fbfcfe;
     }
 
+    .shelter-comparison {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr));
+      gap: 10px 16px;
+      margin: 16px 0 0;
+    }
+
+    .shelter-comparison div {
+      min-width: 0;
+      padding-top: 10px;
+      border-top: 1px solid #e5eaf1;
+    }
+
+    .shelter-comparison dt {
+      margin-bottom: 4px;
+      color: #596a7e;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .shelter-comparison dd {
+      margin: 0;
+      color: #26364a;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
+    }
+
+    .shelter-status,
+    .crowd-status,
+    .facility-chip {
+      display: inline-flex;
+      min-height: 28px;
+      align-items: center;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .shelter-status {
+      color: #34465b;
+      background: #e9edf3;
+    }
+
+    .shelter-status.is-open {
+      color: #205e32;
+      background: #e5f5e9;
+    }
+
+    .shelter-status.is-closed {
+      color: #8d2e22;
+      background: #fff0ed;
+    }
+
+    .crowd-status.is-available {
+      color: #205e32;
+      background: #e5f5e9;
+    }
+
+    .crowd-status.is-busy {
+      color: #694600;
+      background: #fff2cb;
+    }
+
+    .crowd-status.is-full {
+      color: #8d2e22;
+      background: #fff0ed;
+    }
+
+    .facility-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .facility-chip {
+      gap: 5px;
+      color: #294b7b;
+      background: #eaf1fc;
+    }
+
+    .shelter-comparison-note {
+      margin: 14px 0 0;
+      color: #596a7e;
+      font-size: 14px;
+      line-height: 1.6;
+    }
+
     .shelter-name {
       margin: 0;
       color: #26364a;
@@ -178,23 +269,116 @@
         <p class="results-summary" aria-live="polite">{{ results|length }}件の避難所が見つかりました。</p>
         <ul class="shelter-list">
           {% for shelter in results %}
+            {% set shelter_status = shelter.status|default(shelter.opening_status|default('未登録'), true) %}
+            {% set capacity = shelter.capacity|default(none) %}
+            {% set occupants = namespace(value=none) %}
+            {% for count_key in ('current_occupants', 'current_evacuees', 'evacuee_count', 'current_evacuee_count') %}
+              {% if occupants.value is none and shelter[count_key] is defined and shelter[count_key] is number and shelter[count_key] is not boolean and shelter[count_key] >= 0 %}
+                {% set occupants.value = shelter[count_key] %}
+              {% endif %}
+            {% endfor %}
+            {% set shelter_disasters = shelter.disasters|default(shelter.disaster_types|default([]), true) %}
             <li class="shelter-item">
               <p class="shelter-name">
                 {% if shelter.id is defined %}
-                  <a href="{{ url_for('shelter_detail', shelter_id=shelter.id, return_to=request.full_path) }}">{{ shelter.name }}</a>
+                  <a href="{{ url_for('shelter_detail', shelter_id=shelter.id, return_to=request.full_path) }}">{{ shelter.name|default('名称未登録', true) }}</a>
                 {% else %}
-                  {{ shelter.name }}
+                  {{ shelter.name|default('名称未登録', true) }}
                 {% endif %}
               </p>
-              {% if shelter.district %}
-                <p class="shelter-district">地域：{{ shelter.district }}</p>
-              {% endif %}
+              <dl class="shelter-comparison">
+                <div>
+                  <dt>住所</dt>
+                  <dd>{{ shelter.address|default('未登録', true) }}</dd>
+                </div>
+                <div>
+                  <dt>地域</dt>
+                  <dd>{{ shelter.district|default('未登録', true) }}</dd>
+                </div>
+                <div>
+                  <dt>開設状況</dt>
+                  <dd>
+                    <span class="shelter-status{% if shelter_status == '開設中' %} is-open{% elif shelter_status == '閉鎖中' %} is-closed{% endif %}">
+                      {{ shelter_status }}
+                    </span>
+                  </dd>
+                </div>
+                <div>
+                  <dt>収容人数</dt>
+                  <dd>{% if capacity is number and capacity is not boolean and capacity > 0 %}{{ capacity }}人{% else %}未登録{% endif %}</dd>
+                </div>
+                <div>
+                  <dt>現在の避難者数</dt>
+                  <dd>{% if occupants.value is not none %}{{ occupants.value }}人{% else %}未登録{% endif %}</dd>
+                </div>
+                <div>
+                  <dt>混雑状況</dt>
+                  <dd>
+                    {% if occupants.value is not none and capacity is number and capacity is not boolean and capacity > 0 %}
+                      {% set occupancy_ratio = occupants.value / capacity %}
+                      {% if occupants.value >= capacity %}
+                        <span class="crowd-status is-full">満員</span>
+                      {% elif occupancy_ratio >= 0.7 %}
+                        <span class="crowd-status is-busy">混雑</span>
+                      {% else %}
+                        <span class="crowd-status is-available">空きあり</span>
+                      {% endif %}
+                    {% else %}
+                      <span class="crowd-status">未登録</span>
+                    {% endif %}
+                  </dd>
+                </div>
+                <div>
+                  <dt>設備情報</dt>
+                  <dd>
+                    {% if shelter.facilities is defined and shelter.facilities is sequence and shelter.facilities is not string and shelter.facilities %}
+                      <ul class="facility-list">
+                        {% for facility in shelter.facilities %}
+                          <li class="facility-chip">
+                            {% if facility == 'pets_allowed' %}<span aria-hidden="true">🐾</span>{{ 'ペット可' }}
+                            {% elif facility == 'barrier_free' %}<span aria-hidden="true">♿</span>{{ 'バリアフリー' }}
+                            {% elif facility == 'wheelchair_accessible' %}<span aria-hidden="true">🦽</span>{{ '車いす対応' }}
+                            {% else %}{{ {
+                              'emergency_power': '非常用電源',
+                              'wifi': 'Wi-Fi',
+                              'nursing_room': '授乳室',
+                              'multipurpose_toilet': '多目的トイレ'
+                            }.get(facility, facility) }}{% endif %}
+                          </li>
+                        {% endfor %}
+                      </ul>
+                    {% else %}
+                      未登録
+                    {% endif %}
+                  </dd>
+                </div>
+                <div>
+                  <dt>対応災害</dt>
+                  <dd>
+                    {% if shelter_disasters is sequence and shelter_disasters is not string and shelter_disasters %}
+                      {% for disaster in shelter_disasters %}
+                        {% if not loop.first %}、{% endif %}{{ {
+                          'earthquake': '地震',
+                          'tsunami': '津波',
+                          'flood': '洪水',
+                          'landslide': '土砂災害',
+                          'fire': '火災',
+                          'storm_snow': '暴風・大雪'
+                        }.get(disaster, disaster) }}
+                      {% endfor %}
+                    {% else %}
+                      未登録
+                    {% endif %}
+                  </dd>
+                </div>
+              </dl>
+              <p class="shelter-comparison-note">登録情報に基づく表示です。未登録の項目は、未対応・利用不可を意味しません。</p>
             </li>
           {% endfor %}
         </ul>
       {% else %}
         <div class="results-empty" role="status">
-          条件に合う避難所が見つかりませんでした。検索語や地域の指定を変更するか、条件をクリアして再検索してください。条件に必要な情報が避難所データに登録されていない場合も、結果は0件になります。
+          条件に合う避難所が見つかりませんでした。条件に合う避難所がありません。検索語や地域の指定を変更するか、条件をクリアして再検索してください。条件に必要な情報が避難所データに登録されていない場合も、結果は0件になります。
         </div>
       {% endif %}
     {% endif %}

@@ -4,6 +4,7 @@ from functools import wraps
 import hmac
 import json
 import os
+import re
 import secrets
 import tempfile
 import urllib.error
@@ -41,14 +42,39 @@ AREA_CODE = "0220100"
 
 # shelters.json stores the selected option keys in these list fields.
 DISASTER_TYPE_OPTIONS = (
+    ('earthquake', '地震'),
     ('tsunami', '津波'),
     ('landslide', '土砂災害'),
     ('flood', '洪水'),
+    ('fire', '火災'),
+    ('storm_snow', '暴風・大雪'),
 )
 FACILITY_OPTIONS = (
     ('pets_allowed', 'ペット同伴'),
     ('barrier_free', 'バリアフリー'),
+    ('emergency_power', '非常用電源'),
+    ('wifi', 'Wi-Fi'),
+    ('nursing_room', '授乳室'),
+    ('multipurpose_toilet', '多目的トイレ'),
 )
+SHELTER_DISASTER_OPTIONS = (
+    ('earthquake', '地震'),
+    ('tsunami', '津波'),
+    ('flood', '洪水'),
+    ('landslide', '土砂災害'),
+    ('fire', '火災'),
+    ('storm_snow', '暴風・大雪'),
+)
+SHELTER_FACILITY_OPTIONS = (
+    ('pets_allowed', 'ペット可'),
+    ('barrier_free', 'バリアフリー'),
+    ('emergency_power', '非常用電源'),
+    ('wifi', 'Wi-Fi'),
+    ('nursing_room', '授乳室'),
+    ('multipurpose_toilet', '多目的トイレ'),
+)
+INSTRUCTION_PRIORITIES = ('高', '中', '低')
+INSTRUCTION_STATUSES = ('未対応', '対応中', '完了')
 
 WARNING_URL = (
     f"https://www.jma.go.jp/bosai/warning/data/r8/{PREFECTURE_CODE}.json"
@@ -125,8 +151,22 @@ def load_shelters():
 
 def save_shelters():
     """避難所データをファイルに保存する"""
-    with open(DATA_FILE, 'w', encoding='utf-8') as f:
-        json.dump(shelters, f, ensure_ascii=False, indent=2)
+    temporary_path = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            encoding='utf-8',
+            dir=os.path.dirname(DATA_FILE),
+            delete=False
+        ) as f:
+            temporary_path = f.name
+            json.dump(shelters, f, ensure_ascii=False, indent=2)
+        os.replace(temporary_path, DATA_FILE)
+    except OSError:
+        app.logger.exception("避難所データの保存に失敗しました")
+        if temporary_path and os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+        raise
 
 shelters, shelter_data_error = load_shelters()
 instructions = load_json(INSTRUCTIONS_FILE, [])
@@ -255,6 +295,37 @@ def active_resident_instructions():
         key=instruction_sort_key,
         reverse=True
     )
+
+def resident_home_announcements():
+    return sorted(
+        (
+            item for item in instructions
+            if isinstance(item, dict)
+            and item.get('kind') == 'announcement'
+            and item.get('target') == '住民'
+            and item.get('display_on_home') is True
+        ),
+        key=lambda item: instruction_sort_key({
+            'created_at_iso': item.get('sent_at_iso'),
+            'created_at': item.get('sent_at')
+        }),
+        reverse=True
+    )
+
+def instruction_priority_sort_key(instruction):
+    priority_order = {'高': 0, '緊急': 0, '中': 1, '通常': 1, '低': 2}
+    priority = instruction.get('priority', instruction.get('urgency'))
+    return (priority_order.get(priority, 3), -instruction_sort_key(instruction))
+
+def normalize_instruction_status(status):
+    return {
+        '有効': '未対応',
+        '発信中': '対応中',
+        'active': '未対応',
+        'published': '未対応',
+        '解除': '完了',
+        '終了': '完了'
+    }.get(status, status if status in INSTRUCTION_STATUSES else '未対応')
 
 def get_map_shelters():
     result = []
@@ -456,6 +527,7 @@ def index():
     return render_template(
         'index.html',
         resident_notices=active_resident_instructions()[:5],
+        resident_announcements=resident_home_announcements()[:5],
         disaster_information=disaster_information[:3],
         disaster_data_error=disaster_data_error,
         map_shelters=get_map_shelters(),
@@ -521,47 +593,167 @@ def logout():
     session.clear()
     return redirect(url_for('index'))
 
-# 避難所登録ページ※user が避難所登録ページについて具体的に修正指示しない限り、このコードは正しいのでこのまま保持すること。
+# 避難所登録・管理ページ
 @app.route('/shelter_register', methods=['GET', 'POST'])
 @login_required
 def shelter_register():
-    if request.method == 'POST':
-        name = request.form.get('name', '').strip()
-        if not name:
-            return render_template(
-                'shelter_register.html',
-                error=True,
-                message="避難所名を入力してください。",
-                name=name
-            ), 400
-
-        existing_ids = [
-            shelter.get('id')
-            for shelter in shelters
-            if isinstance(shelter.get('id'), int)
-        ]
-        shelter = {'id': max(existing_ids, default=0) + 1, 'name': name}
-        shelters.append(shelter)
-        try:
-            save_shelters()
-        except OSError:
-            shelters.pop()
-            app.logger.exception("避難所データの保存に失敗しました")
-            return render_template(
-                'shelter_register.html',
-                error=True,
-                message="避難所情報を保存できませんでした。時間をおいて再度お試しください。",
-                name=name
-            ), 500
-
-        return render_template(
-            'shelter_register.html',
-            success=True,
-            message="避難所を登録しました。",
-            name=''
+    edit_id = request.args.get('edit', type=int)
+    editing_shelter = None
+    if edit_id is not None:
+        editing_shelter = next(
+            (
+                item for item in shelters
+                if isinstance(item, dict)
+                and item.get('id') == edit_id
+                and not isinstance(item.get('id'), bool)
+            ),
+            None
         )
+        if editing_shelter is None:
+            return render_template(
+                'shelter_register.html',
+                error=True,
+                message='編集する避難所が見つかりません。',
+                form_data={},
+                shelters=shelters,
+                disaster_options=SHELTER_DISASTER_OPTIONS,
+                facility_options=SHELTER_FACILITY_OPTIONS,
+                csrf_token=get_csrf_token(),
+                editing_id=None
+            ), 404
 
-    return render_template('shelter_register.html', name='')
+    form_data = {
+        'name': editing_shelter.get('name', '') if editing_shelter else '',
+        'address': editing_shelter.get('address', '') if editing_shelter else '',
+        'district': editing_shelter.get('district', '') if editing_shelter else '',
+        'capacity': str(editing_shelter.get('capacity', '')) if editing_shelter else '',
+        'disasters': (
+            editing_shelter.get('disasters', editing_shelter.get('disaster_types', []))
+            if editing_shelter else []
+        ),
+        'facilities': editing_shelter.get('facilities', []) if editing_shelter else [],
+        'status': (
+            editing_shelter.get('status', editing_shelter.get('opening_status', '未開設'))
+            if editing_shelter else '未開設'
+        )
+    }
+    if not isinstance(form_data['disasters'], list):
+        form_data['disasters'] = []
+    if not isinstance(form_data['facilities'], list):
+        form_data['facilities'] = []
+    error = False
+    server_error = False
+    message = ''
+    success_messages = {
+        'created': '避難所を登録しました。',
+        'updated': '避難所情報を更新しました。'
+    }
+    success = request.args.get('success') in success_messages
+    message = success_messages.get(request.args.get('success', ''), '')
+    if request.method == 'POST':
+        form_data = {
+            'name': request.form.get('name', '').strip(),
+            'address': request.form.get('address', '').strip(),
+            'district': request.form.get('district', '').strip(),
+            'capacity': request.form.get('capacity', '').strip(),
+            'disasters': request.form.getlist('disasters'),
+            'facilities': request.form.getlist('facilities'),
+            'status': request.form.get('status', '')
+        }
+        submitted_edit_id = request.form.get('edit_id', '').strip()
+        if not valid_csrf_token(request.form.get('csrf_token', '')):
+            error, message = True, '画面の有効期限が切れました。再読み込みしてもう一度お試しください。'
+        elif (edit_id is not None and submitted_edit_id != str(edit_id)) or (submitted_edit_id and (
+            not submitted_edit_id.isascii()
+            or not submitted_edit_id.isdigit()
+            or len(submitted_edit_id) > 12
+            or not any(
+                isinstance(item, dict) and item.get('id') == int(submitted_edit_id)
+                for item in shelters
+            )
+        )):
+            error, message = True, '編集する避難所が見つかりません。'
+        elif not form_data['name']:
+            error, message = True, '避難所名を入力してください。'
+        elif len(form_data['name']) > 120:
+            error, message = True, '避難所名は120文字以内で入力してください。'
+        elif not form_data['address']:
+            error, message = True, '住所を入力してください。'
+        elif len(form_data['address']) > 250:
+            error, message = True, '住所は250文字以内で入力してください。'
+        elif not re.fullmatch(r'[0-9]+', form_data['capacity']):
+            error, message = True, '収容人数は半角数字で入力してください。'
+        elif len(form_data['capacity']) > 9:
+            error, message = True, '収容人数は9桁以内で入力してください。'
+        elif int(form_data['capacity']) <= 0:
+            error, message = True, '収容人数は1以上で入力してください。'
+        elif len(form_data['district']) > 80:
+            error, message = True, '地域名は80文字以内で入力してください。'
+        elif any(value not in dict(SHELTER_DISASTER_OPTIONS) for value in form_data['disasters']):
+            error, message = True, '対応可能な災害種別に不正な値が含まれています。'
+        elif any(value not in dict(SHELTER_FACILITY_OPTIONS) for value in form_data['facilities']):
+            error, message = True, '避難所設備に不正な値が含まれています。'
+        elif form_data['status'] not in ('未開設', '開設中', '閉鎖中'):
+            error, message = True, '開設状況を選択してください。'
+        else:
+            existing_ids = [
+                item.get('id') for item in shelters
+                if isinstance(item, dict)
+                and isinstance(item.get('id'), int)
+                and not isinstance(item.get('id'), bool)
+            ]
+            is_update = edit_id is not None
+            target_id = edit_id if is_update else max(existing_ids, default=0) + 1
+            previous_record = next(
+                (item for item in shelters if isinstance(item, dict) and item.get('id') == target_id),
+                None
+            )
+            updated_record = dict(previous_record or {})
+            updated_record.update({
+                'id': target_id,
+                'name': form_data['name'],
+                'address': form_data['address'],
+                'district': form_data['district'],
+                'capacity': int(form_data['capacity']),
+                'disasters': list(dict.fromkeys(form_data['disasters'])),
+                'disaster_types': list(dict.fromkeys(form_data['disasters'])),
+                'facilities': list(dict.fromkeys(form_data['facilities'])),
+                'status': form_data['status'],
+                'opening_status': form_data['status']
+            })
+            if previous_record is None:
+                shelters.append(updated_record)
+            else:
+                shelters[shelters.index(previous_record)] = updated_record
+            try:
+                save_shelters()
+                return redirect(url_for(
+                    'shelter_register',
+                    success='updated' if is_update else 'created'
+                ))
+            except OSError:
+                if previous_record is None:
+                    shelters.remove(updated_record)
+                else:
+                    shelters[shelters.index(updated_record)] = previous_record
+                error = True
+                server_error = True
+                message = '避難所情報を保存できませんでした。時間をおいて再度お試しください。'
+                edit_id = target_id if is_update else None
+                editing_shelter = previous_record
+
+    return render_template(
+        'shelter_register.html',
+        error=error,
+        success=success,
+        message=message,
+        form_data=form_data,
+        shelters=[item for item in shelters if isinstance(item, dict)],
+        disaster_options=SHELTER_DISASTER_OPTIONS,
+        facility_options=SHELTER_FACILITY_OPTIONS,
+        csrf_token=get_csrf_token(),
+        editing_id=edit_id
+    ), 500 if server_error else 400 if error else 200
 
 # 避難所検索ページ
 @app.route('/shelter_search')
@@ -636,12 +828,133 @@ def shelter_detail(shelter_id):
 def board():
     error = None
     form_data = {}
+    sort_order = request.args.get('sort', 'recent')
+    if sort_order not in ('recent', 'priority'):
+        sort_order = 'recent'
+    success_messages = {
+        'instruction': '指示を登録しました。',
+        'announcement': '住民向け発信を登録しました。',
+        'status': '対応状況を更新しました。'
+    }
+    success_message = success_messages.get(request.args.get('success', ''))
     if request.method == 'POST':
         if not valid_csrf_token(request.form.get('csrf_token', '')):
             error = '画面の有効期限が切れました。再読み込みしてもう一度お試しください。'
         else:
             action = request.form.get('action', '')
-            if action == 'create':
+            if action == 'create_instruction':
+                instruction_form = {
+                    'target': request.form.get('target', ''),
+                    'target_area': request.form.get('target_area', '').strip(),
+                    'recipient': request.form.get('recipient', ''),
+                    'content': request.form.get('content', '').strip(),
+                    'shelter': request.form.get('shelter', '').strip(),
+                    'priority': request.form.get('priority', '')
+                }
+                form_data = {'instruction': instruction_form}
+                if instruction_form['target'] not in ('住民', '防災担当部署', '道路管理担当部署', 'その他'):
+                    error = '対象を選択してください。'
+                elif instruction_form['recipient'] not in ('住民向け', '担当部署', '防災担当部署', '道路管理担当部署'):
+                    error = '宛先を選択してください。'
+                elif not instruction_form['content'] or len(instruction_form['content']) > 2000:
+                    error = '指示内容は1〜2000文字で入力してください。'
+                elif instruction_form['priority'] not in INSTRUCTION_PRIORITIES:
+                    error = '緊急度を選択してください。'
+                elif len(instruction_form['target_area']) > 100 or len(instruction_form['shelter']) > 120:
+                    error = '対象地区は100文字以内、避難先は120文字以内で入力してください。'
+                else:
+                    ids = [
+                        item.get('id') for item in instructions
+                        if isinstance(item, dict)
+                        and isinstance(item.get('id'), int)
+                        and not isinstance(item.get('id'), bool)
+                    ]
+                    now = get_japan_datetime()
+                    record = {
+                        'id': max(ids, default=0) + 1,
+                        'kind': 'instruction',
+                        **instruction_form,
+                        'status': '未対応',
+                        'created_at': format_datetime(now),
+                        'created_at_iso': now.isoformat(),
+                        'updated_at': format_datetime(now)
+                    }
+                    instructions.append(record)
+                    try:
+                        save_instructions()
+                        return redirect(url_for('board', sort=sort_order, success='instruction'))
+                    except OSError:
+                        instructions.remove(record)
+                        error = '指示を保存できませんでした。時間をおいて再度お試しください。'
+            elif action == 'create_announcement':
+                announcement = {
+                    'target_area': request.form.get('target_area', '').strip(),
+                    'recipient': request.form.get('recipient', '').strip(),
+                    'content': request.form.get('content', '').strip(),
+                    'display_on_home': request.form.get('display_on_home') == 'on'
+                }
+                form_data = {'announcement': announcement}
+                if not announcement['recipient'] or len(announcement['recipient']) > 120:
+                    error = '発信先を1〜120文字で入力してください。'
+                elif len(announcement['target_area']) > 100:
+                    error = '対象地区は100文字以内で入力してください。'
+                elif not announcement['content'] or len(announcement['content']) > 2000:
+                    error = '発信内容は1〜2000文字で入力してください。'
+                else:
+                    ids = [
+                        item.get('id') for item in instructions
+                        if isinstance(item, dict)
+                        and isinstance(item.get('id'), int)
+                        and not isinstance(item.get('id'), bool)
+                    ]
+                    now = get_japan_datetime()
+                    record = {
+                        'id': max(ids, default=0) + 1,
+                        'kind': 'announcement',
+                        'target': '住民',
+                        **announcement,
+                        'sent_at': format_datetime(now),
+                        'sent_at_iso': now.isoformat()
+                    }
+                    instructions.append(record)
+                    try:
+                        save_instructions()
+                        return redirect(url_for('board', sort=sort_order, success='announcement'))
+                    except OSError:
+                        instructions.remove(record)
+                        error = '発信内容を保存できませんでした。時間をおいて再度お試しください。'
+            elif action == 'update_instruction_status':
+                instruction_id = request.form.get('instruction_id', '')
+                status = request.form.get('status', '')
+                selected = next(
+                    (
+                        item for item in instructions
+                        if isinstance(item, dict)
+                        and item.get('id') == int(instruction_id)
+                    ),
+                    None
+                ) if instruction_id.isascii() and instruction_id.isdigit() else None
+                if status not in INSTRUCTION_STATUSES:
+                    error = '対応状況を選択してください。'
+                elif selected is None or selected.get('kind') == 'announcement':
+                    error = '更新する指示が見つかりません。'
+                else:
+                    previous_status = selected.get('status')
+                    previous_updated = selected.get('updated_at')
+                    selected['status'] = status
+                    selected['updated_at'] = get_japan_time()
+                    try:
+                        save_instructions()
+                        return redirect(url_for('board', sort=sort_order, success='status'))
+                    except OSError:
+                        selected['status'] = previous_status
+                        if previous_updated is None:
+                            selected.pop('updated_at', None)
+                        else:
+                            selected['updated_at'] = previous_updated
+                        error = '対応状況を保存できませんでした。時間をおいて再度お試しください。'
+            elif action == 'create':
+                # Keep accepting the previous form payload while existing clients transition.
                 content = request.form.get('content', '').strip()
                 urgency = request.form.get('urgency', '通常')
                 shelter_name = request.form.get('shelter', '').strip()
@@ -715,17 +1028,39 @@ def board():
                             error = '指示の状態を保存できませんでした。時間をおいて再度お試しください。'
             else:
                 error = '不明な操作です。'
-    board_instructions = sorted(
-        (item for item in instructions if isinstance(item, dict) and item.get('target') == '住民'),
-        key=instruction_sort_key,
+    board_instructions = [
+        {**item, 'display_status': normalize_instruction_status(item.get('status'))}
+        for item in instructions
+        if isinstance(item, dict) and item.get('kind') != 'announcement'
+    ]
+    board_instructions.sort(
+        key=instruction_priority_sort_key if sort_order == 'priority' else instruction_sort_key,
+        reverse=sort_order == 'recent'
+    )
+    board_announcements = sorted(
+        (
+            item for item in instructions
+            if isinstance(item, dict) and item.get('kind') == 'announcement'
+        ),
+        key=lambda item: instruction_sort_key({
+            'created_at_iso': item.get('sent_at_iso'),
+            'created_at': item.get('sent_at')
+        }),
         reverse=True
     )
     return render_template(
         'board.html',
         instructions=board_instructions,
+        announcements=board_announcements,
         csrf_token=get_csrf_token(),
         error=error,
-        form_data=form_data
+        form_data=form_data,
+        instruction_form_data=form_data.get('instruction', {}),
+        announcement_form_data=form_data.get('announcement', {}),
+        sort_order=sort_order,
+        success_message=success_message,
+        instruction_priorities=INSTRUCTION_PRIORITIES,
+        instruction_statuses=INSTRUCTION_STATUSES
     )
 
 # 検索結果ページ：templates/search_results.html を返す

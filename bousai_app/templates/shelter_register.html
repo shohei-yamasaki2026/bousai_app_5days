@@ -1,23 +1,293 @@
 {% extends "base.html" %}
 
+{% block title %}避難所登録・管理 - 防災アプリ{% endblock %}
+
+{% block head_extra %}
+  <style>
+    .shelter-admin {
+      display: grid;
+      gap: 20px;
+    }
+
+    .shelter-admin-card {
+      padding: 26px;
+      border: 1px solid #e5eaf1;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 6px 22px rgb(36 60 93 / 7%);
+    }
+
+    .shelter-admin-card h2 {
+      margin: 0 0 14px;
+      color: #244f91;
+      font-size: 24px;
+    }
+
+    .shelter-form,
+    .shelter-field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .shelter-form {
+      gap: 16px;
+    }
+
+    .shelter-field label,
+    .shelter-options legend {
+      color: #26364a;
+      font-weight: 700;
+    }
+
+    .shelter-field input,
+    .shelter-field select {
+      width: 100%;
+      min-height: 48px;
+      padding: 10px 12px;
+      border: 1px solid #aebaca;
+      border-radius: 8px;
+      color: #26364a;
+      background: #fff;
+      font: inherit;
+    }
+
+    .shelter-options {
+      display: grid;
+      gap: 8px;
+      margin: 0;
+      padding: 14px;
+      border: 1px solid #d7e0eb;
+      border-radius: 10px;
+    }
+
+    .shelter-options legend {
+      padding: 0 6px;
+    }
+
+    .shelter-option {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      gap: 10px;
+      padding: 6px 8px;
+      border-radius: 7px;
+      cursor: pointer;
+    }
+
+    .shelter-option input {
+      width: 22px;
+      height: 22px;
+      margin: 0;
+      accent-color: #2855a1;
+    }
+
+    .shelter-field :focus-visible,
+    .shelter-option input:focus-visible,
+    .shelter-button:focus-visible,
+    .shelter-edit-link:focus-visible {
+      outline: 3px solid #85b7ff;
+      outline-offset: 2px;
+    }
+
+    .shelter-error,
+    .shelter-success {
+      padding: 12px 14px;
+      border-radius: 8px;
+      line-height: 1.65;
+    }
+
+    .shelter-error {
+      border: 1px solid #d99a8d;
+      color: #8d2e22;
+      background: #fff2ef;
+    }
+
+    .shelter-success {
+      border: 1px solid #93c6a1;
+      color: #205e32;
+      background: #effaf1;
+    }
+
+    .shelter-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .shelter-button,
+    .shelter-edit-link {
+      display: inline-flex;
+      min-height: 46px;
+      align-items: center;
+      justify-content: center;
+      padding: 9px 16px;
+      border: 1px solid transparent;
+      border-radius: 8px;
+      color: #fff;
+      background: #2855a1;
+      font: inherit;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+    }
+
+    .shelter-button-secondary {
+      border-color: #aebaca;
+      color: #294b7b;
+      background: #fff;
+    }
+
+    .shelter-records {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .shelter-record {
+      padding: 16px;
+      border: 1px solid #dbe3ed;
+      border-radius: 10px;
+      background: #fbfcfe;
+    }
+
+    .shelter-record h3 {
+      margin: 0 0 8px;
+      color: #26364a;
+      font-size: 19px;
+    }
+
+    .shelter-record p {
+      margin: 6px 0;
+      line-height: 1.65;
+      overflow-wrap: anywhere;
+    }
+
+    @media (max-width: 600px) {
+      .shelter-admin-card {
+        padding: 22px 18px;
+      }
+    }
+  </style>
+{% endblock %}
+
 {% block content %}
-<h2>避難所登録</h2>
-<p>新しい避難所情報を登録します。</p>
+<div class="shelter-admin">
+  <section class="shelter-admin-card" aria-labelledby="shelter-form-title">
+    <h2 id="shelter-form-title">{% if editing_id %}避難所情報を編集{% else %}避難所を登録{% endif %}</h2>
+    {% if error %}<p class="shelter-error" role="alert">{{ message }}</p>{% endif %}
+    {% if success %}<p class="shelter-success" role="status">{{ message }}</p>{% endif %}
 
-<!-- 成功・エラーメッセージ表示 -->
-{% if success %}
-  <p>{{ message }}</p>
-{% endif %}
+    <form class="shelter-form" method="post" action="{{ url_for('shelter_register', edit=editing_id) if editing_id else url_for('shelter_register') }}" data-confirm-shelter>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      {% if editing_id %}<input type="hidden" name="edit_id" value="{{ editing_id }}">{% endif %}
+      <div class="shelter-field">
+        <label for="name">避難所名（必須）</label>
+        <input id="name" name="name" maxlength="120" required value="{{ form_data.name or '' }}" placeholder="例：中央小学校">
+      </div>
+      <div class="shelter-field">
+        <label for="address">住所（必須）</label>
+        <input id="address" name="address" maxlength="250" required value="{{ form_data.address or '' }}" placeholder="例：青森市中央一丁目1番1号">
+      </div>
+      <div class="shelter-field">
+        <label for="district">地域・地区（任意）</label>
+        <input id="district" name="district" maxlength="80" value="{{ form_data.district or '' }}" placeholder="例：中央区">
+      </div>
+      <div class="shelter-field">
+        <label for="capacity">収容人数（必須・半角数字）</label>
+        <input id="capacity" name="capacity" type="text" inputmode="numeric" pattern="[0-9]+" maxlength="9" required value="{{ form_data.capacity or '' }}" placeholder="例：300">
+      </div>
 
-{% if error %}
-  <p>{{ message }}</p>
-{% endif %}
+      <fieldset class="shelter-options">
+        <legend>対応可能な災害種別</legend>
+        {% for value, label in disaster_options %}
+          <label class="shelter-option">
+            <input type="checkbox" name="disasters" value="{{ value }}" {% if value in form_data.disasters %}checked{% endif %}>
+            <span>{{ label }}</span>
+          </label>
+        {% endfor %}
+      </fieldset>
 
-<form method="POST">
-  <p>
-    <label for="name">避難所名（必須）</label><br>
-    <input type="text" id="name" name="name" value="{{ name }}" required>
-  </p>
-  <p><button type="submit">登録</button></p>
-</form>
+      <fieldset class="shelter-options">
+        <legend>避難所設備</legend>
+        {% for value, label in facility_options %}
+          <label class="shelter-option">
+            <input type="checkbox" name="facilities" value="{{ value }}" {% if value in form_data.facilities %}checked{% endif %}>
+            <span>{{ label }}</span>
+          </label>
+        {% endfor %}
+      </fieldset>
+
+      <div class="shelter-field">
+        <label for="status">開設状況</label>
+        <select id="status" name="status" required>
+          {% for value in ('未開設', '開設中', '閉鎖中') %}
+            <option value="{{ value }}" {% if form_data.status == value %}selected{% endif %}>{{ value }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="shelter-actions">
+        <button class="shelter-button" type="submit">{% if editing_id %}確認して更新{% else %}確認して登録{% endif %}</button>
+        {% if editing_id %}
+          <a class="shelter-edit-link shelter-button-secondary" href="{{ url_for('shelter_register') }}">編集をキャンセル</a>
+        {% endif %}
+      </div>
+    </form>
+  </section>
+
+  <section class="shelter-admin-card" aria-labelledby="shelter-list-title">
+    <h2 id="shelter-list-title">登録済み避難所</h2>
+    {% if shelters %}
+      <ul class="shelter-records">
+        {% for shelter in shelters %}
+          {% set shelter_disasters = shelter.disasters if shelter.disasters is defined else shelter.disaster_types|default([]) %}
+          <li class="shelter-record">
+            <h3>{{ shelter.name or '名称未登録' }}</h3>
+            <p>住所：{{ shelter.address or '未登録' }}</p>
+            <p>地域・地区：{{ shelter.district or '未登録' }}</p>
+            <p>収容人数：{% if shelter.capacity is defined and shelter.capacity %}{{ shelter.capacity }}人{% else %}未登録{% endif %}</p>
+            <p>対応災害：
+              {% if shelter_disasters %}
+                {% for value in shelter_disasters %}{% if not loop.first %}、{% endif %}{{ dict(disaster_options).get(value, value) }}{% endfor %}
+              {% else %}未登録{% endif %}
+            </p>
+            <p>設備：
+              {% if shelter.facilities %}
+                {% for value in shelter.facilities %}{% if not loop.first %}、{% endif %}{{ dict(facility_options).get(value, value) }}{% endfor %}
+              {% else %}未登録{% endif %}
+            </p>
+            <p>開設状況：{{ shelter.status or shelter.opening_status or '未登録' }}</p>
+            <a class="shelter-edit-link" href="{{ url_for('shelter_register', edit=shelter.id) }}">編集</a>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>避難所データがありません。</p>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  document.querySelector('[data-confirm-shelter]')?.addEventListener('submit', (event) => {
+    const form = event.currentTarget;
+    const checkedLabels = (name) => Array.from(form.querySelectorAll(`input[name="${name}"]:checked`))
+      .map((input) => input.nextElementSibling.textContent.trim())
+      .join('、') || '未選択';
+    const summary = [
+      `避難所名：${form.elements.name.value.trim()}`,
+      `住所：${form.elements.address.value.trim()}`,
+      `地域・地区：${form.elements.district.value.trim() || '未指定'}`,
+      `収容人数：${form.elements.capacity.value.trim()}人`,
+      `災害種別：${checkedLabels('disasters')}`,
+      `設備：${checkedLabels('facilities')}`,
+      `開設状況：${form.elements.status.value}`
+    ].join('\n');
+    if (!window.confirm(`次の内容で避難所情報を${form.elements.edit_id ? '更新' : '登録'}します。\n\n${summary}`)) {
+      event.preventDefault();
+    }
+  });
+</script>
 {% endblock %}

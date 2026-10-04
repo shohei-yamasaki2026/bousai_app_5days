@@ -368,6 +368,20 @@
       <p>現在、有効な住民向け指示はありません。</p>
     {% endif %}
     <a class="home-text-link" href="{{ url_for('board') }}">指示ボードで詳細を確認</a>
+    {% if resident_announcements %}
+      <h3>住民向け発信</h3>
+      <ul class="instruction-list">
+        {% for announcement in resident_announcements %}
+          <li class="instruction-item">
+            {{ announcement.content }}
+            <div class="instruction-meta">
+              {% if announcement.target_area %}<span>対象地区：{{ announcement.target_area }}</span>{% endif %}
+              <span>発信日時：{{ announcement.sent_at or '未登録' }}</span>
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% endif %}
   </section>
 
   <section class="dashboard-card" aria-labelledby="disaster-summary-heading">
