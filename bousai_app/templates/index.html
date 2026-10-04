@@ -151,6 +151,161 @@
       font-weight: 650;
     }
 
+    .instruction-list,
+    .disaster-list {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .instruction-item,
+    .disaster-item {
+      padding: 16px;
+      border: 1px solid #dbe3ed;
+      border-radius: 10px;
+      background: #fbfcfe;
+      line-height: 1.65;
+    }
+
+    .instruction-item.is-emergency {
+      border-color: #d99a8d;
+      color: #8d2e22;
+      background: #fff2ef;
+    }
+
+    .home-data-error {
+      padding: 12px 14px;
+      border: 1px solid #d99a8d;
+      border-radius: 8px;
+      color: #8d2e22;
+      background: #fff2ef;
+      line-height: 1.65;
+    }
+
+    .instruction-meta,
+    .disaster-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 16px;
+      margin-top: 8px;
+      color: #596a7e;
+      font-size: 14px;
+    }
+
+    .disaster-category {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-right: 8px;
+      font-weight: 750;
+    }
+
+    .disaster-category::before {
+      display: inline-grid;
+      width: 24px;
+      height: 24px;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      font-size: 13px;
+    }
+
+    .disaster-category.emergency::before {
+      content: "!!";
+      background: #a82920;
+    }
+
+    .disaster-category.warning::before {
+      content: "!";
+      background: #a95b10;
+    }
+
+    .disaster-category.information::before {
+      content: "i";
+      background: #2855a1;
+    }
+
+    .home-text-link {
+      display: inline-flex;
+      min-height: 44px;
+      align-items: center;
+      margin-top: 14px;
+      color: #2855a1;
+      font-weight: 700;
+    }
+
+    .map-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px 18px;
+      margin: 14px 0;
+      padding: 12px 14px;
+      border: 1px solid #dbe3ed;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .map-legend-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: #34465b;
+      font-size: 14px;
+    }
+
+    .map-legend-dot {
+      width: 13px;
+      height: 13px;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      background: #536579;
+      box-shadow: 0 0 0 1px #536579;
+    }
+
+    .map-legend-dot.is-open {
+      background: #248344;
+      box-shadow: 0 0 0 1px #248344;
+    }
+
+    .map-legend-dot.is-closed {
+      background: #b84931;
+      box-shadow: 0 0 0 1px #b84931;
+    }
+
+    .map-location-action,
+    .weather-refresh {
+      min-height: 44px;
+      padding: 9px 14px;
+      border: 1px solid #aebaca;
+      border-radius: 8px;
+      color: #294b7b;
+      background: #fff;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .map-location-action:focus-visible,
+    .weather-refresh:focus-visible {
+      outline: 3px solid #85b7ff;
+      outline-offset: 2px;
+    }
+
+    .map-status {
+      min-height: 1.6em;
+      color: #596a7e;
+    }
+
+    .weather-heading {
+      align-items: center;
+    }
+
+    .weather-refresh {
+      flex: 0 0 auto;
+    }
+
     @media (max-width: 600px) {
       .home-dashboard {
         gap: 18px;
@@ -195,6 +350,50 @@
 
 {% block content %}
 <div class="home-dashboard">
+  <section class="dashboard-card" aria-labelledby="resident-instructions-heading">
+    <h2 class="section-heading" id="resident-instructions-heading">住民向け指示</h2>
+    {% if resident_notices %}
+      <ul class="instruction-list">
+        {% for instruction in resident_notices %}
+          <li class="instruction-item{% if instruction.urgency == '緊急' %} is-emergency{% endif %}">
+            {% if instruction.urgency == '緊急' %}<strong>【緊急】</strong>{% endif %}{{ instruction.content }}
+            <div class="instruction-meta">
+              <span>発信日時：{{ instruction.created_at or '未登録' }}</span>
+              {% if instruction.shelter %}<span>避難先：{{ instruction.shelter }}</span>{% endif %}
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>現在、有効な住民向け指示はありません。</p>
+    {% endif %}
+    <a class="home-text-link" href="{{ url_for('board') }}">指示ボードで詳細を確認</a>
+  </section>
+
+  <section class="dashboard-card" aria-labelledby="disaster-summary-heading">
+    <h2 class="section-heading" id="disaster-summary-heading">災害情報（状況のお知らせ）</h2>
+    {% if disaster_data_error %}
+      <p class="home-data-error" role="alert">災害情報を読み込めませんでした。時間をおいて再度お試しください。</p>
+    {% elif disaster_information %}
+      <ul class="disaster-list">
+        {% for item in disaster_information %}
+          <li class="disaster-item">
+            <span class="disaster-category {{ item.category }}">{{ {'emergency': '緊急', 'warning': '警報', 'information': '情報'}[item.category] }}</span>
+            {{ item.warnings|map(attribute='name')|join('、') if item.warnings else '発表された警報・注意報はありません' }}
+            <div class="disaster-meta">
+              <span>地域：{{ item.area_name or '未登録' }}</span>
+              <span>受信日時：{{ item.timestamp or '未登録' }}</span>
+              {% if item.report_time %}<span>発表日時：{{ item.report_time }}</span>{% endif %}
+            </div>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>表示できる災害情報はありません。</p>
+    {% endif %}
+    <a class="home-text-link" href="{{ url_for('disaster_information') }}">災害情報一覧を見る</a>
+  </section>
+
   <section class="dashboard-card" aria-labelledby="map-heading">
     <h2 class="section-heading" id="map-heading">
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -202,7 +401,17 @@
       </svg>
       避難所マップ
     </h2>
-    <div id="shelterMap" role="region" aria-label="日本全国の地図"></div>
+    <div class="map-legend" aria-label="地図の凡例">
+      <span class="map-legend-item"><span class="map-legend-dot is-open" aria-hidden="true"></span>開設中</span>
+      <span class="map-legend-item"><span class="map-legend-dot is-closed" aria-hidden="true"></span>未開設・閉鎖中</span>
+      <span class="map-legend-item"><span class="map-legend-dot" aria-hidden="true"></span>状況未登録</span>
+    </div>
+    <button class="map-location-action" id="locateUser" type="button">現在地を地図に表示</button>
+    <p class="map-status" id="mapStatus" role="status" aria-live="polite">
+      {% if map_data_error %}避難所データを読み込めないため、マーカーは表示されていません。
+      {% elif not map_shelters %}位置情報が登録された避難所はありません。地図にマーカーは表示されていません。{% endif %}
+    </p>
+    <div id="shelterMap" role="region" aria-label="避難所の位置を示す地図"></div>
   </section>
 
   <section class="dashboard-card" aria-labelledby="weather-heading">
@@ -213,16 +422,12 @@
         </svg>
         青森市 気象警報・注意報
       </h2>
-      <span class="refresh-label">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M20 7v5h-5M4 17v-5h5M5.6 9a7 7 0 0 1 11.8-2L20 12M4 12l2.6 5a7 7 0 0 0 11.8-2" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2.4"/>
-        </svg>
-        10分おき自動更新
-      </span>
+      <button class="weather-refresh" id="refreshWeather" type="button">今すぐ更新</button>
     </div>
     <div class="weather-content" id="weatherContent" aria-live="polite" aria-busy="true">
       <p>気象情報を読み込んでいます...</p>
     </div>
+    <p class="search-hint">自動更新：10分間隔</p>
   </section>
 </div>
 {% endblock %}
@@ -231,14 +436,86 @@
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      const map = L.map('shelterMap', { scrollWheelZoom: false }).setView([35.3390, 139.4903], 12);
-      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-        referrerPolicy: 'strict-origin-when-cross-origin',
-        maxZoom: 19
-      }).addTo(map);
+      const mapShelters = {{ map_shelters|tojson }};
+      const mapStatus = document.getElementById('mapStatus');
+      const locationButton = document.getElementById('locateUser');
+      let map = null;
+      if (window.L) {
+        map = L.map('shelterMap', { scrollWheelZoom: false }).setView([36.2, 138.2], 5);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+          referrerPolicy: 'strict-origin-when-cross-origin',
+          maxZoom: 19
+        }).addTo(map);
+        const positions = [];
+        mapShelters.forEach((shelter) => {
+          const status = shelter.opening_status.trim().toLowerCase();
+          const open = ['開設中', 'open', 'opened'].includes(status);
+          const closed = ['未開設', '閉鎖中', 'closed', 'not_open'].includes(status);
+          const color = open ? '#248344' : closed ? '#b84931' : '#536579';
+          const marker = L.circleMarker(
+            [shelter.latitude, shelter.longitude],
+            { radius: 9, color: '#fff', weight: 2, fillColor: color, fillOpacity: 1 }
+          );
+          const popup = document.createElement('div');
+          const name = document.createElement('strong');
+          name.textContent = shelter.name;
+          const openingStatus = document.createElement('p');
+          openingStatus.textContent = `開設状況：${shelter.opening_status}`;
+          popup.append(name, openingStatus);
+          marker.bindPopup(popup).addTo(map);
+          positions.push([shelter.latitude, shelter.longitude]);
+        });
+        if (positions.length) {
+          map.fitBounds(positions, { padding: [24, 24], maxZoom: 13 });
+        } else {
+          mapStatus.textContent = '位置情報が登録された避難所はありません。地図にマーカーは表示されていません。';
+        }
+      } else {
+        mapStatus.textContent = '地図を読み込めませんでした。避難所の位置情報は表示されていません。';
+      }
+
+      locationButton.addEventListener('click', () => {
+        if (!navigator.geolocation) {
+          mapStatus.textContent = 'このブラウザーでは現在地を取得できません。';
+          return;
+        }
+        locationButton.disabled = true;
+        mapStatus.textContent = '現在地を取得しています...';
+        navigator.geolocation.getCurrentPosition(
+          (position) => {
+            locationButton.disabled = false;
+            if (!map) {
+              mapStatus.textContent = '地図を読み込めないため、現在地を表示できません。';
+              return;
+            }
+            const coordinates = [position.coords.latitude, position.coords.longitude];
+            map.setView(coordinates, 14);
+            L.circleMarker(coordinates, {
+              radius: 9,
+              color: '#fff',
+              weight: 2,
+              fillColor: '#2855a1',
+              fillOpacity: 1
+            }).bindPopup('現在地').addTo(map);
+            mapStatus.textContent = '現在地を地図に表示しました。位置情報はこの画面内でのみ使用しています。';
+          },
+          (error) => {
+            locationButton.disabled = false;
+            if (error.code === error.PERMISSION_DENIED) {
+              mapStatus.textContent = '位置情報の利用が許可されませんでした。ブラウザーの設定をご確認ください。';
+            } else if (error.code === error.TIMEOUT) {
+              mapStatus.textContent = '現在地の取得がタイムアウトしました。もう一度お試しください。';
+            } else {
+              mapStatus.textContent = '現在地を取得できませんでした。位置情報の設定をご確認ください。';
+            }
+          },
+          { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+        );
+      });
 
       const weatherContent = document.getElementById('weatherContent');
+      const weatherRefresh = document.getElementById('refreshWeather');
 
       function addIcon(parent, path, color) {
         const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -288,9 +565,10 @@
         if (data.error) {
           const errorMessage = document.createElement('p');
           errorMessage.className = 'weather-status is-error';
-          errorMessage.textContent = '気象情報の取得に失敗しました';
+          errorMessage.textContent = data.stale
+            ? '気象情報の更新に失敗しました。以下には前回取得した情報を表示しています。'
+            : '気象情報の取得に失敗しました。最新情報を確認できません。';
           weatherContent.appendChild(errorMessage);
-          return;
         }
 
         const status = document.createElement('p');
@@ -310,10 +588,18 @@
           });
           weatherContent.append(status, list);
         } else {
-          status.className = 'weather-status';
-          addIcon(status, 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1.2 14.3-4-4 1.4-1.4 2.6 2.6 5-5 1.4 1.4-6.4 6.4Z', '#239b4b');
+          status.className = data.error ? 'weather-status is-error' : 'weather-status';
+          addIcon(
+            status,
+            data.error
+              ? 'M12 2 1 21h22L12 2Zm1 15h-2v-2h2v2Zm0-4h-2V9h2v4Z'
+              : 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm-1.2 14.3-4-4 1.4-1.4 2.6 2.6 5-5 1.4 1.4-6.4 6.4Z',
+            data.error ? '#b84931' : '#239b4b'
+          );
           const statusText = document.createElement('span');
-          statusText.textContent = '現在、警報・注意報は発表されていません';
+          statusText.textContent = data.error
+            ? '警報・注意報の有無を確認できません'
+            : '現在、警報・注意報は発表されていません';
           status.appendChild(statusText);
           weatherContent.appendChild(status);
         }
@@ -322,16 +608,20 @@
         meta.className = 'weather-meta';
         addMetaRow(meta, 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 5v5.4l3.6 2.1-1 1.7-4.6-2.8V7h2Z', 'データ取得', data.last_fetch_time || '不明');
         addMetaRow(meta, 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 5v5.4l3.6 2.1-1 1.7-4.6-2.8V7h2Z', '気象庁発表', data.report_time || '不明');
+        if (data.last_attempt_time) {
+          addMetaRow(meta, 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm1 5v5.4l3.6 2.1-1 1.7-4.6-2.8V7h2Z', '最終取得試行', data.last_attempt_time);
+        }
         weatherContent.appendChild(meta);
       }
 
       async function updateWeatherWarnings() {
+        weatherRefresh.disabled = true;
+        weatherRefresh.textContent = '更新中...';
         try {
           const response = await fetch('{{ url_for("api_weather_warnings") }}');
           if (!response.ok) {
             throw new Error(`気象情報APIがHTTP ${response.status}を返しました`);
           }
-          console.log('気象情報を更新しました');
           renderWeather(await response.json());
         } catch (error) {
           console.error('気象情報の更新に失敗しました:', error);
@@ -342,9 +632,13 @@
             last_fetch_time: '取得失敗',
             error: true
           });
+        } finally {
+          weatherRefresh.disabled = false;
+          weatherRefresh.textContent = '今すぐ更新';
         }
       }
 
+      weatherRefresh.addEventListener('click', () => updateWeatherWarnings());
       updateWeatherWarnings();
       window.setInterval(updateWeatherWarnings, 600000);
     });

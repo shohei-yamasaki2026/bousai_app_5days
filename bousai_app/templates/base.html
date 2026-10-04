@@ -73,6 +73,19 @@
       height: 25px;
     }
 
+    .current-page-name {
+      min-width: 0;
+      max-width: min(45vw, 420px);
+      margin: 0 12px 0 auto;
+      overflow: hidden;
+      color: #fff;
+      font-size: 17px;
+      font-weight: 700;
+      text-align: right;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
     .site-nav {
       position: absolute;
       top: calc(100% - 1px);
@@ -103,6 +116,18 @@
       background: #eff5ff;
     }
 
+    .site-nav a[aria-current="page"] {
+      color: #193b70;
+      background: #eaf1fc;
+      font-weight: 750;
+    }
+
+    .site-nav a:focus-visible,
+    .menu-toggle:focus-visible {
+      outline: 3px solid #85b7ff;
+      outline-offset: 2px;
+    }
+
     .nav-account {
       margin: 4px 8px 2px;
       padding: 10px 6px 4px;
@@ -130,6 +155,11 @@
         font-size: 21px;
       }
 
+      .current-page-name {
+        max-width: 40vw;
+        font-size: 15px;
+      }
+
       .site-nav {
         right: 16px;
       }
@@ -146,6 +176,20 @@
   <header class="site-header">
     <div class="header-inner">
       <h1 class="site-title">防災アプリ</h1>
+      <p class="current-page-name" aria-current="page">
+        {{ {
+          'index': 'ホーム',
+          'shelter_search': '避難所検索',
+          'search_results': '避難所検索結果',
+          'all_shelters': '避難所一覧',
+          'shelter_detail': '避難所詳細',
+          'shelter_register': '避難所登録',
+          'disaster_information': '災害情報',
+          'board': '指示の発信',
+          'login': 'ログイン',
+          'logout': 'ログアウト'
+        }.get(request.endpoint, '防災アプリ') }}
+      </p>
       <button class="menu-toggle" type="button" aria-label="メニューを開く" aria-expanded="false" aria-controls="siteNav">
         <svg viewBox="0 0 24 24" aria-hidden="true">
           <path d="M3 6h18M3 12h18M3 18h18" fill="none" stroke="currentColor" stroke-linecap="round" stroke-width="2.5"/>
@@ -153,16 +197,17 @@
       </button>
     </div>
     <nav class="site-nav" id="siteNav" aria-label="メインメニュー">
-      <a href="{{ url_for('index') }}">ホーム</a>
-      <a href="{{ url_for('shelter_search') }}">避難所検索</a>
-      <a href="{{ url_for('shelter_register') }}">避難所登録</a>
-      <a href="{{ url_for('board') }}">指示・発信ボード</a>
+      <a href="{{ url_for('index') }}" {% if request.endpoint == 'index' %}aria-current="page"{% endif %}>ホーム</a>
+      <a href="{{ url_for('shelter_search') }}" {% if request.endpoint in ('shelter_search', 'search_results', 'all_shelters', 'shelter_detail') %}aria-current="page"{% endif %}>避難所検索</a>
+      <a href="{{ url_for('shelter_register') }}" {% if request.endpoint == 'shelter_register' %}aria-current="page"{% endif %}>避難所登録</a>
+      <a href="{{ url_for('disaster_information') }}" {% if request.endpoint == 'disaster_information' %}aria-current="page"{% endif %}>災害情報</a>
+      <a href="{{ url_for('board') }}" {% if request.endpoint == 'board' %}aria-current="page"{% endif %}>指示の発信</a>
       {% if session.logged_in %}
         <div class="nav-account">ログイン中{% if session.username %}（{{ session.username }}）{% endif %}</div>
         <a href="{{ url_for('logout') }}">ログアウト</a>
       {% else %}
         <div class="nav-account">未ログイン</div>
-        <a href="{{ url_for('login') }}">ログイン</a>
+        <a href="{{ url_for('login') }}" {% if request.endpoint == 'login' %}aria-current="page"{% endif %}>ログイン</a>
       {% endif %}
     </nav>
   </header>

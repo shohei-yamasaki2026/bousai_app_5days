@@ -1,0 +1,180 @@
+{% extends "base.html" %}
+
+{% block title %}災害情報 - 防災アプリ{% endblock %}
+
+{% block head_extra %}
+  <style>
+    .disaster-page {
+      display: grid;
+      gap: 18px;
+    }
+
+    .disaster-card {
+      padding: 26px;
+      border: 1px solid #e5eaf1;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 6px 22px rgb(36 60 93 / 7%);
+    }
+
+    .disaster-card h2 {
+      margin: 0 0 12px;
+      color: #244f91;
+      font-size: 25px;
+    }
+
+    .disaster-explainer,
+    .disaster-empty {
+      color: #536579;
+      line-height: 1.7;
+    }
+
+    .disaster-filter {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+      margin: 18px 0;
+    }
+
+    .disaster-filter select,
+    .disaster-filter button {
+      min-height: 46px;
+      padding: 8px 12px;
+      border: 1px solid #aebaca;
+      border-radius: 8px;
+      color: #26364a;
+      background: #fff;
+      font: inherit;
+    }
+
+    .disaster-filter button {
+      color: #fff;
+      background: #2855a1;
+      cursor: pointer;
+    }
+
+    .disaster-filter :focus-visible,
+    .disaster-actions a:focus-visible {
+      outline: 3px solid #85b7ff;
+      outline-offset: 2px;
+    }
+
+    .disaster-records {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .disaster-record {
+      padding: 16px;
+      border: 1px solid #dbe3ed;
+      border-radius: 10px;
+      background: #fbfcfe;
+      line-height: 1.7;
+    }
+
+    .disaster-category {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin-right: 8px;
+      font-weight: 750;
+    }
+
+    .disaster-category::before {
+      display: inline-grid;
+      width: 26px;
+      height: 26px;
+      place-items: center;
+      border-radius: 50%;
+      color: #fff;
+      font-size: 13px;
+    }
+
+    .disaster-category.emergency::before {
+      content: "!!";
+      background: #a82920;
+    }
+
+    .disaster-category.warning::before {
+      content: "!";
+      background: #a95b10;
+    }
+
+    .disaster-category.information::before {
+      content: "i";
+      background: #2855a1;
+    }
+
+    .disaster-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 16px;
+      margin-top: 8px;
+      color: #596a7e;
+      font-size: 14px;
+    }
+
+    .disaster-actions a {
+      display: inline-flex;
+      min-height: 46px;
+      align-items: center;
+      color: #2855a1;
+      font-weight: 700;
+    }
+
+    @media (max-width: 600px) {
+      .disaster-card {
+        padding: 22px 18px;
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="disaster-page">
+  <section class="disaster-card" aria-labelledby="disaster-title">
+    <h2 id="disaster-title">災害情報（状況のお知らせ）</h2>
+    <p class="disaster-explainer">記録された災害情報を受信日時の新しい順に表示しています。現在の状況とは異なる場合があります。最新の気象警報・注意報はホーム画面で取得日時と発表日時を確認してください。住民向けの行動要請は「指示の発信」欄をご確認ください。</p>
+    <form class="disaster-filter" action="{{ url_for('disaster_information') }}" method="get">
+      <label for="category">情報の種別</label>
+      <select id="category" name="category">
+        <option value="" {% if not selected_category %}selected{% endif %}>すべて</option>
+        <option value="emergency" {% if selected_category == 'emergency' %}selected{% endif %}>緊急</option>
+        <option value="warning" {% if selected_category == 'warning' %}selected{% endif %}>警報</option>
+        <option value="information" {% if selected_category == 'information' %}selected{% endif %}>情報</option>
+      </select>
+      <button type="submit">絞り込む</button>
+    </form>
+    {% if data_error %}
+      <p class="disaster-empty" role="alert">災害情報を読み込めませんでした。時間をおいて再度お試しください。</p>
+    {% elif records %}
+      <ol class="disaster-records">
+        {% for item in records %}
+          <li class="disaster-record">
+            <span class="disaster-category {{ item.category }}">{{ category_labels[item.category] }}</span>
+            {% if item.warnings %}
+              {{ item.warnings|map(attribute='name')|join('、') }}
+            {% else %}
+              発表された警報・注意報はありません
+            {% endif %}
+            <div class="disaster-meta">
+              <span>地域：{{ item.area_name or '未登録' }}</span>
+              <span>受信日時：{{ item.timestamp or '未登録' }}</span>
+              <span>発表日時：{{ item.report_time or '未登録' }}</span>
+            </div>
+          </li>
+        {% endfor %}
+      </ol>
+    {% else %}
+      <p class="disaster-empty" role="status">該当する災害情報はありません。</p>
+    {% endif %}
+  </section>
+  <nav class="disaster-actions" aria-label="災害情報の操作">
+    <a href="{{ url_for('index') }}">ホームに戻る</a>
+  </nav>
+</div>
+{% endblock %}

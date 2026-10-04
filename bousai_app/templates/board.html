@@ -2,24 +2,190 @@
 
 {% block title %}指示・発信ボード - 防災アプリ{% endblock %}
 
-{% block content %}
-<h2>発信ボード</h2>
-<p>住民向けの発信を登録・確認できます。</p>
+{% block head_extra %}
+  <style>
+    .board-page {
+      display: grid;
+      gap: 20px;
+    }
 
-<!-- 発信一覧 -->
-<h3>発信一覧</h3>
-{% if instructions %}
-<table border="1" cellpadding="5">
-  <tr>
-    <th>内容</th>
-  </tr>
-  {% for inst in instructions %}
-  <tr>
-    <td>{{ inst.content }}{% if inst.shelter %}（避難先: {{ inst.shelter }}）{% endif %}</td>
-  </tr>
-  {% endfor %}
-</table>
-{% else %}
-<p>登録されている指示はありません。</p>
-{% endif %}
+    .board-card {
+      padding: 26px;
+      border: 1px solid #e5eaf1;
+      border-radius: 16px;
+      background: #fff;
+      box-shadow: 0 6px 22px rgb(36 60 93 / 7%);
+    }
+
+    .board-card h2 {
+      margin: 0 0 14px;
+      color: #244f91;
+      font-size: 24px;
+    }
+
+    .board-form,
+    .board-field {
+      display: grid;
+      gap: 8px;
+    }
+
+    .board-form {
+      gap: 16px;
+    }
+
+    .board-field label {
+      font-weight: 700;
+    }
+
+    .board-field input,
+    .board-field select,
+    .board-field textarea {
+      width: 100%;
+      min-height: 46px;
+      padding: 10px 12px;
+      border: 1px solid #aebaca;
+      border-radius: 8px;
+      color: #26364a;
+      background: #fff;
+      font: inherit;
+    }
+
+    .board-field textarea {
+      min-height: 110px;
+      resize: vertical;
+    }
+
+    .board-field :focus-visible,
+    .board-button:focus-visible {
+      outline: 3px solid #85b7ff;
+      outline-offset: 2px;
+    }
+
+    .board-button {
+      min-height: 46px;
+      padding: 9px 16px;
+      border: 0;
+      border-radius: 8px;
+      color: #fff;
+      background: #2855a1;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .board-error {
+      padding: 12px 14px;
+      border: 1px solid #d99a8d;
+      border-radius: 8px;
+      color: #8d2e22;
+      background: #fff2ef;
+    }
+
+    .instruction-records {
+      display: grid;
+      gap: 12px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    .instruction-record {
+      padding: 16px;
+      border: 1px solid #dbe3ed;
+      border-radius: 10px;
+      background: #fbfcfe;
+      line-height: 1.7;
+    }
+
+    .instruction-record.is-emergency {
+      border-color: #d99a8d;
+      color: #8d2e22;
+      background: #fff2ef;
+    }
+
+    .instruction-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px 16px;
+      margin-top: 8px;
+      color: #596a7e;
+      font-size: 14px;
+    }
+
+    .instruction-status-form {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
+    @media (max-width: 600px) {
+      .board-card {
+        padding: 22px 18px;
+      }
+    }
+  </style>
+{% endblock %}
+
+{% block content %}
+<div class="board-page">
+  <section class="board-card" aria-labelledby="board-title">
+    <h2 id="board-title">住民向け指示を発信</h2>
+    <p>ここで発信した有効な指示は、ホーム画面上部に表示されます。災害情報（状況のお知らせ）とは別に管理されます。</p>
+    {% if error %}<p class="board-error" role="alert">{{ error }}</p>{% endif %}
+    <form class="board-form" method="post" action="{{ url_for('board') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="create">
+      <div class="board-field">
+        <label for="content">指示内容（必須・500文字以内）</label>
+        <textarea id="content" name="content" maxlength="500" required>{{ form_data.content or '' }}</textarea>
+      </div>
+      <div class="board-field">
+        <label for="urgency">緊急度</label>
+        <select id="urgency" name="urgency">
+          <option value="通常" {% if form_data.urgency != '緊急' %}selected{% endif %}>通常</option>
+          <option value="緊急" {% if form_data.urgency == '緊急' %}selected{% endif %}>緊急</option>
+        </select>
+      </div>
+      <div class="board-field">
+        <label for="shelter">避難先（任意）</label>
+        <input id="shelter" name="shelter" maxlength="120" value="{{ form_data.shelter or '' }}">
+      </div>
+      <button class="board-button" type="submit">指示を発信</button>
+    </form>
+  </section>
+
+  <section class="board-card" aria-labelledby="instruction-list-title">
+    <h2 id="instruction-list-title">住民向け指示の一覧</h2>
+    {% if instructions %}
+      <ul class="instruction-records">
+        {% for instruction in instructions %}
+          <li class="instruction-record{% if instruction.urgency == '緊急' %} is-emergency{% endif %}">
+            {% if instruction.urgency == '緊急' %}<strong>【緊急】</strong>{% endif %}{{ instruction.content }}
+            <div class="instruction-meta">
+              <span>状態：{{ instruction.status or '未登録' }}</span>
+              <span>発信日時：{{ instruction.created_at or '未登録' }}</span>
+              {% if instruction.shelter %}<span>避難先：{{ instruction.shelter }}</span>{% endif %}
+            </div>
+            {% if instruction.status in ('有効', '発信中', 'active', 'published') %}
+              <form class="instruction-status-form" method="post" action="{{ url_for('board') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+                <input type="hidden" name="action" value="update_status">
+                <input type="hidden" name="instruction_id" value="{{ instruction.id }}">
+                <label for="status-{{ instruction.id }}">状態を変更</label>
+                <select id="status-{{ instruction.id }}" name="status">
+                  <option value="解除">解除</option>
+                  <option value="終了">終了</option>
+                </select>
+                <button class="board-button" type="submit">状態を保存</button>
+              </form>
+            {% endif %}
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p>住民向け指示はありません。</p>
+    {% endif %}
+  </section>
+</div>
 {% endblock %}

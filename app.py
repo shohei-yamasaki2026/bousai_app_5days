@@ -1,8 +1,12 @@
 from flask import Flask, jsonify, request, render_template, session, redirect, url_for
 from urllib.parse import urlparse, urljoin
 from functools import wraps
+import hmac
 import json
 import os
+import secrets
+import tempfile
+import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
 
@@ -16,7 +20,11 @@ app = Flask(
     template_folder=os.path.join(APP_DIR, 'templates'),
     static_folder=os.path.join(APP_DIR, 'static'),
 )
-app.secret_key = 'your-secret-key-here'
+app.secret_key = os.environ.get('FLASK_SECRET_KEY')
+if not app.secret_key:
+    app.logger.warning("FLASK_SECRET_KEY is unset; using an ephemeral development key")
+    app.secret_key = secrets.token_hex(32)
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 # 管理者認証情報
 ADMIN_CREDENTIALS = {
@@ -45,6 +53,7 @@ FACILITY_OPTIONS = (
 WARNING_URL = (
     f"https://www.jma.go.jp/bosai/warning/data/r8/{PREFECTURE_CODE}.json"
 )
+weather_warnings_cache = None
 
 JST = timezone(timedelta(hours=9))
 
@@ -121,14 +130,28 @@ def save_shelters():
 
 shelters, shelter_data_error = load_shelters()
 instructions = load_json(INSTRUCTIONS_FILE, [])
+if not isinstance(instructions, list):
+    app.logger.error("指示データが配列ではありません")
+    instructions = []
 
 def save_instructions():
     """指示ボードのデータをファイルに保存する"""
+    temporary_path = None
     try:
-        with open(INSTRUCTIONS_FILE, 'w', encoding='utf-8') as f:
+        with tempfile.NamedTemporaryFile(
+            mode='w',
+            encoding='utf-8',
+            dir=os.path.dirname(INSTRUCTIONS_FILE),
+            delete=False
+        ) as f:
+            temporary_path = f.name
             json.dump(instructions, f, ensure_ascii=False, indent=2)
-    except Exception:
-        pass
+        os.replace(temporary_path, INSTRUCTIONS_FILE)
+    except OSError:
+        app.logger.exception("指示データの保存に失敗しました")
+        if temporary_path and os.path.exists(temporary_path):
+            os.unlink(temporary_path)
+        raise
 # ────────────────────────────────
 
 # ────────────────────────────────
@@ -153,6 +176,108 @@ def get_japan_time():
     """日本時間（JST）の現在時刻を取得する"""
     return datetime.now(JST).strftime("%Y年%m月%d日 %H:%M")
 
+def get_japan_datetime():
+    return datetime.now(JST)
+
+def format_datetime(value):
+    if isinstance(value, datetime):
+        return value.astimezone(JST).strftime("%Y年%m月%d日 %H:%M")
+    return get_japan_time()
+
+def get_csrf_token():
+    token = session.get('_csrf_token')
+    if not token:
+        token = secrets.token_urlsafe(32)
+        session['_csrf_token'] = token
+    return token
+
+def valid_csrf_token(candidate):
+    expected = session.get('_csrf_token', '')
+    return bool(expected and candidate and hmac.compare_digest(expected, candidate))
+
+def instruction_is_active(instruction):
+    return (
+        isinstance(instruction, dict)
+        and instruction.get('target') == '住民'
+        and instruction.get('status') in ('有効', '発信中', 'active', 'published')
+    )
+
+def instruction_sort_key(instruction):
+    timestamp = instruction.get('created_at_iso', '')
+    try:
+        parsed = datetime.fromisoformat(timestamp)
+    except (TypeError, ValueError):
+        try:
+            parsed = datetime.strptime(instruction.get('created_at', ''), '%Y年%m月%d日 %H:%M')
+        except (TypeError, ValueError):
+            return 0
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=JST)
+    return parsed.timestamp()
+
+def get_disaster_information():
+    try:
+        with open(os.path.join(APP_DIR, 'data', 'notification_history.json'), encoding='utf-8') as f:
+            records = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        app.logger.exception("災害情報履歴の読み込みに失敗しました")
+        return [], True
+    if not isinstance(records, list):
+        app.logger.error("災害情報履歴が配列ではありません")
+        return [], True
+    valid_records = []
+    for item in records:
+        if not isinstance(item, dict):
+            continue
+        category = (
+            'emergency' if item.get('has_emergency')
+            else 'warning' if item.get('has_warning')
+            else 'information'
+        )
+        valid_records.append({**item, 'category': category})
+    return sorted(valid_records, key=disaster_sort_key, reverse=True), False
+
+def disaster_sort_key(item):
+    timestamp = item.get('timestamp', '')
+    for date_format in ('%Y年%m月%d日 %H:%M', '%Y-%m-%dT%H:%M:%S%z'):
+        try:
+            parsed = datetime.strptime(timestamp, date_format)
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=JST)
+            return parsed.timestamp()
+        except (TypeError, ValueError):
+            continue
+    return 0
+
+def active_resident_instructions():
+    return sorted(
+        (item for item in instructions if instruction_is_active(item)),
+        key=instruction_sort_key,
+        reverse=True
+    )
+
+def get_map_shelters():
+    result = []
+    for shelter in shelters:
+        if not isinstance(shelter, dict):
+            continue
+        if isinstance(shelter.get('latitude'), bool) or isinstance(shelter.get('longitude'), bool):
+            continue
+        try:
+            latitude = float(shelter['latitude'])
+            longitude = float(shelter['longitude'])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if not (-90 <= latitude <= 90 and -180 <= longitude <= 180):
+            continue
+        result.append({
+            'id': shelter.get('id'),
+            'name': str(shelter.get('name') or '名称未登録'),
+            'latitude': latitude,
+            'longitude': longitude,
+            'opening_status': str(shelter.get('opening_status') or '未登録')
+        })
+    return result
 
 def format_report_time(iso_str):
     """気象庁の発表時刻（ISO形式）をJSTの表示用文字列に変換する"""
@@ -287,6 +412,7 @@ def parse_area_warnings(warning_data):
 
 def get_weather_warnings():
     """対象市区町村の警報・注意報を取得する"""
+    global weather_warnings_cache
     try:
         # 青森県の新形式（令和8年～）警報・注意報データを取得
         with urllib.request.urlopen(url=WARNING_URL, timeout=10) as res:
@@ -294,28 +420,68 @@ def get_weather_warnings():
 
         warnings, report_datetime = parse_area_warnings(warning_data)
 
-        return {
+        weather_warnings_cache = {
             "area_name": AREA_NAME,
             "warnings": warnings,
             "report_time": format_report_time(report_datetime),
-            "last_fetch_time": get_japan_time()
+            "last_fetch_time": get_japan_time(),
+            "error": False,
+            "stale": False
         }
+        return weather_warnings_cache
 
-    except Exception:
+    except (OSError, ValueError, urllib.error.URLError):
+        app.logger.exception("気象情報の取得に失敗しました")
+        if weather_warnings_cache:
+            return {
+                **weather_warnings_cache,
+                "error": True,
+                "stale": True,
+                "last_attempt_time": get_japan_time()
+            }
         return {
             "area_name": AREA_NAME,
             "warnings": [],
             "report_time": "取得失敗",
             "last_fetch_time": get_japan_time(),
-            "error": True
+            "error": True,
+            "stale": False
         }
 
 
 # トップページ：templates/index.html を返す（住民向け指示も表示する）
 @app.route('/')
 def index():
-    resident_notices = [i for i in instructions if i.get('target') == '住民']
-    return render_template('index.html', resident_notices=resident_notices)
+    disaster_information, disaster_data_error = get_disaster_information()
+    return render_template(
+        'index.html',
+        resident_notices=active_resident_instructions()[:5],
+        disaster_information=disaster_information[:3],
+        disaster_data_error=disaster_data_error,
+        map_shelters=get_map_shelters(),
+        map_data_error=shelter_data_error
+    )
+
+@app.route('/disaster_information')
+def disaster_information():
+    selected_category = request.args.get('category', '')
+    valid_categories = {'emergency', 'warning', 'information'}
+    if selected_category not in valid_categories:
+        selected_category = ''
+    records, data_error = get_disaster_information()
+    if selected_category:
+        records = [item for item in records if item['category'] == selected_category]
+    return render_template(
+        'disaster_information.html',
+        records=records,
+        data_error=data_error,
+        selected_category=selected_category,
+        category_labels={
+            'emergency': '緊急',
+            'warning': '警報',
+            'information': '情報'
+        }
+    )
 
 # ログインページ
 @app.route('/login', methods=['GET', 'POST'])
@@ -465,11 +631,102 @@ def shelter_detail(shelter_id):
 
 
 # 指示ボード：住民向けの指示を一覧で確認する
-@app.route('/board')
+@app.route('/board', methods=['GET', 'POST'])
 @login_required
 def board():
-    resident_instructions = [i for i in instructions if i.get('target') == '住民']
-    return render_template('board.html', instructions=resident_instructions)
+    error = None
+    form_data = {}
+    if request.method == 'POST':
+        if not valid_csrf_token(request.form.get('csrf_token', '')):
+            error = '画面の有効期限が切れました。再読み込みしてもう一度お試しください。'
+        else:
+            action = request.form.get('action', '')
+            if action == 'create':
+                content = request.form.get('content', '').strip()
+                urgency = request.form.get('urgency', '通常')
+                shelter_name = request.form.get('shelter', '').strip()
+                form_data = {
+                    'content': content,
+                    'urgency': urgency,
+                    'shelter': shelter_name
+                }
+                if not content or len(content) > 500:
+                    error = '指示内容は1〜500文字で入力してください。'
+                elif urgency not in ('通常', '緊急'):
+                    error = '緊急度を選択してください。'
+                elif len(shelter_name) > 120:
+                    error = '避難先は120文字以内で入力してください。'
+                else:
+                    existing_ids = [
+                        item.get('id') for item in instructions
+                        if isinstance(item, dict)
+                        and isinstance(item.get('id'), int)
+                        and not isinstance(item.get('id'), bool)
+                    ]
+                    now = get_japan_datetime()
+                    instructions.append({
+                        'id': max(existing_ids, default=0) + 1,
+                        'target': '住民',
+                        'content': content,
+                        'urgency': urgency,
+                        'shelter': shelter_name,
+                        'status': '有効',
+                        'created_at': format_datetime(now),
+                        'created_at_iso': now.isoformat(),
+                        'updated_at': format_datetime(now)
+                    })
+                    try:
+                        save_instructions()
+                        return redirect(url_for('board'))
+                    except OSError:
+                        instructions.pop()
+                        error = '指示を保存できませんでした。時間をおいて再度お試しください。'
+            elif action == 'update_status':
+                instruction_id = request.form.get('instruction_id', '')
+                status = request.form.get('status', '')
+                if status not in ('解除', '終了') or not instruction_id.isdigit():
+                    error = '指示の状態を更新できませんでした。'
+                else:
+                    selected = next(
+                        (
+                            item for item in instructions
+                            if isinstance(item, dict)
+                            and item.get('id') == int(instruction_id)
+                            and instruction_is_active(item)
+                        ),
+                        None
+                    )
+                    if selected is None:
+                        error = '有効な指示が見つかりません。'
+                    else:
+                        previous_status = selected.get('status')
+                        previous_updated_at = selected.get('updated_at')
+                        selected['status'] = status
+                        selected['updated_at'] = get_japan_time()
+                        try:
+                            save_instructions()
+                            return redirect(url_for('board'))
+                        except OSError:
+                            selected['status'] = previous_status
+                            if previous_updated_at is None:
+                                selected.pop('updated_at', None)
+                            else:
+                                selected['updated_at'] = previous_updated_at
+                            error = '指示の状態を保存できませんでした。時間をおいて再度お試しください。'
+            else:
+                error = '不明な操作です。'
+    board_instructions = sorted(
+        (item for item in instructions if isinstance(item, dict) and item.get('target') == '住民'),
+        key=instruction_sort_key,
+        reverse=True
+    )
+    return render_template(
+        'board.html',
+        instructions=board_instructions,
+        csrf_token=get_csrf_token(),
+        error=error,
+        form_data=form_data
+    )
 
 # 検索結果ページ：templates/search_results.html を返す
 @app.route('/search_results')
